@@ -595,13 +595,15 @@ class SolarOfThingsAPI:
         start_time = end_time - timedelta(hours=1)
 
         keys = [
-            "pvInputPower",
+            "generationPower",
+            "pvInputVoltage1",
+            "pv1InputCurrentForBattery",
             "acOutputActivePower",
             "batteryDischargeCurrent",
             "batteryChargingCurrent",
             "batteryVoltage",
             "feedInPower",
-            "batterySOC",
+            "batteryCapacity",
         ]
 
         data = self._post(
@@ -636,6 +638,15 @@ class SolarOfThingsAPI:
             try:
                 latest_values["acOutputActivePower"] = (
                     float(latest_values["acOutputActivePower"]) * 1000.0
+                )
+            except Exception:
+                pass
+                
+        # Unit normalisation: generationPower is kW in API → W
+        if "generationPower" in latest_values:
+            try:
+                latest_values["generationPower"] = (
+                    float(latest_values["generationPower"]) * 1000.0
                 )
             except Exception:
                 pass

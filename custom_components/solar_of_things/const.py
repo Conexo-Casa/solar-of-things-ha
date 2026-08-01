@@ -52,22 +52,36 @@ TOKEN_REFRESH_LEAD_SECONDS = 300  # 5 minutes
 
 # ─── Sensor keys ───────────────────────────────────────────────────────────────
 SENSOR_KEYS = [
-    "pvInputPower",
+    "generationPower",
+    "pvInputVoltage1",
+    "pv1InputCurrentForBattery",
     "acOutputActivePower",
     "batteryDischargeCurrent",
     "batteryChargingCurrent",
     "batteryVoltage",
     "feedInPower",
     "batteryPower",
-    "batterySOC",
+    "batteryCapacity",
     "gridPower",
     "loadPower",
 ]
 
 SENSOR_DEFINITIONS = {
-    "pvInputPower": {
+    "generationPower": {
         "name": "PV Input Power",
         "unit": "W",
+        "device_class": "power",
+        "icon": "mdi:solar-power",
+    },
+    "pvInputVoltage1": {
+        "name": "PV Input Voltage",
+        "unit": "V",
+        "device_class": "power",
+        "icon": "mdi:solar-power",
+    },
+    "pv1InputCurrentForBattery": {
+        "name": "PV Input Current",
+        "unit": "A",
         "device_class": "power",
         "icon": "mdi:solar-power",
     },
@@ -101,7 +115,7 @@ SENSOR_DEFINITIONS = {
         "device_class": "power",
         "icon": "mdi:battery-charging",
     },
-    "batterySOC": {
+    "batteryCapacity": {
         "name": "Battery State of Charge",
         "unit": "%",
         "device_class": "battery",
