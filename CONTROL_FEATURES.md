@@ -54,6 +54,21 @@ Set to 0 to disable grid charging via this limit.
 | Solar First (SNU) | 1 | Solar charges the battery first; grid fills the shortfall |
 | Solar Only (OSO) | 2 | Only solar charges the battery; no grid charging |
 
+### How the current value is read back
+
+Writes go to `POST /apis/remote/device/config/write` under the `…Setting` key
+above. Reads do **not** come from the matching config cache: that cache only
+holds keys previously written through the portal, so it is empty on accounts
+that have never used remote control — which is why these selects reported
+`unknown` before 2.5.0.
+
+The current value is read from the live snapshot
+(`GET /apis/deviceState/simple/state/latest/v1`, fields `outputSourcePriority`
+and `chargerSourcePriority`), falling back to the config cache. Both an integer
+code and a label such as `"SBU"` are accepted. If your model uses different
+names, add them to `STATE_KEY_CANDIDATES` in `const.py` — see
+[API_CAPTURE.md](API_CAPTURE.md).
+
 ---
 
 ## Switch Entities

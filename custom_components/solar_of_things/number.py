@@ -10,9 +10,32 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import DOMAIN, SETTING_KEY_CANDIDATES, STATE_KEY_CANDIDATES
+from .helpers import entry_value, find_entry, state_fields, to_float
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _limit_value(coordinator_data: dict | None, control: str) -> float | None:
+    """Return the numeric value of a limit setting, snapshot before cache.
+
+    The settings cache stores each key as ``{"key": …, "value": …}``; reading
+    the entry itself (as this platform used to) hands Home Assistant a dict and
+    the number shows as unavailable.
+    """
+    data = coordinator_data or {}
+
+    for fields, candidates in (
+        (state_fields(data.get("state")), STATE_KEY_CANDIDATES.get(control, [control])),
+        (data.get("settings") or {}, SETTING_KEY_CANDIDATES.get(control, [control])),
+    ):
+        _key, entry = find_entry(fields, candidates)
+        if entry is None:
+            continue
+        number = to_float(entry_value(entry))
+        if number is not None:
+            return number
+    return None
 
 
 async def async_setup_entry(
@@ -77,7 +100,7 @@ class SolarOfThingsBatteryChargeLimitNumber(_BaseNumber):
 
     @property
     def native_value(self):
-        return ((self.coordinator.data or {}).get("settings") or {}).get(self._setting_key)
+        return _limit_value(self.coordinator.data, self._setting_key)
 
     async def async_set_native_value(self, value: float) -> None:
         await self.hass.async_add_executor_job(self._api.set_battery_charge_limit, self._device_id, int(value))
@@ -100,7 +123,7 @@ class SolarOfThingsBatteryDischargeLimitNumber(_BaseNumber):
 
     @property
     def native_value(self):
-        return ((self.coordinator.data or {}).get("settings") or {}).get(self._setting_key)
+        return _limit_value(self.coordinator.data, self._setting_key)
 
     async def async_set_native_value(self, value: float) -> None:
         await self.hass.async_add_executor_job(self._api.set_battery_discharge_limit, self._device_id, int(value))
@@ -124,7 +147,7 @@ class SolarOfThingsGridChargeLimitNumber(_BaseNumber):
 
     @property
     def native_value(self):
-        return ((self.coordinator.data or {}).get("settings") or {}).get(self._setting_key)
+        return _limit_value(self.coordinator.data, self._setting_key)
 
     async def async_set_native_value(self, value: float) -> None:
         await self.hass.async_add_executor_job(self._api.set_grid_charge_limit, self._device_id, int(value))
