@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.5.0] - 2026-08-06
+
+### Fixed
+- **Charger Source Priority and Output Source Priority selects showed
+  `unknown`.** Both read their current value only from the remote-config cache
+  (`/apis/remote/device/configs/cache/get`), which holds just the keys that have
+  previously been *written* through the portal — on an account that has never
+  used remote control it comes back empty. They now read the live state snapshot
+  (`/apis/deviceState/simple/state/latest/v1`) first and fall back to the cache,
+  and they accept every value shape the API uses: an integer code, a numeric
+  string, an abbreviation (`"SBU"`) or a full label.
+- **Grid Feed-in Power showed `unknown`.** The history endpoint only returns the
+  attribute names it was asked for and that the model records, so models that
+  publish feed-in under another name returned nothing. Missing telemetry keys
+  are now filled from the state snapshot, with units normalised (kW → W), and
+  the derived values (`batteryPower`, `gridPower`, `loadPower`) are recomputed
+  afterwards so they benefit from the recovered readings.
+- **Number entities (charge/discharge/grid-charge limits) were unavailable.**
+  They returned the raw settings entry — a `{"key": …, "value": …}` dict —
+  instead of its value.
+- **Switches now read back from the live snapshot too**, and understand word
+  renderings (`"ON"`, `"Appliance"`) as well as integer codes.
+- **State sensors match attribute names case-insensitively**, fixing readings
+  lost to the snapshot's inconsistent capitalisation (`PV1InputVoltage` vs
+  `pv1InputCurrent`), and scale values using the unit the API reports.
+
+### Added
+- **Diagnostics support** — *Settings → Devices & Services → Solar of Things →
+  ⋮ → Download diagnostics* dumps the raw payloads with credentials, tokens and
+  the account ID redacted, including every attribute name the device publishes
+  and how each contested value resolved.
+- **`tools/dump_solar_api.py`** — standalone script that logs in and prints the
+  attribute names from all three endpoints, for capturing the same data outside
+  Home Assistant.
+- **[API_CAPTURE.md](API_CAPTURE.md)** — four ways to capture the data needed to
+  map an `unknown` entity, and how to add a new attribute name.
+- Priority selects expose `source`, `api_key`, `raw_value` and `raw_display` as
+  entity attributes, and log a warning (once per distinct value) when a value
+  cannot be mapped onto a known option.
+- Per-device attribute names are logged at debug level on the first poll.
+
+### Changed
+- All attribute names now live in candidate lists in `const.py`
+  (`STATE_KEY_CANDIDATES`, `SETTING_KEY_CANDIDATES`,
+  `TELEMETRY_STATE_FALLBACKS`), matched case-insensitively — supporting a new
+  inverter model is a one-line addition there.
+- The option ↔ integer maps are defined once in `const.py` and inverted for the
+  write path, so read-back and write cannot drift apart.
+- `tests/` runs without Home Assistant installed (36 new tests covering payload
+  shapes, unit scaling and option resolution); CI now fails on test failures
+  instead of tolerating them.
+
+---
+
 ## [2.4.2] - 2026-05-31
 
 ### Security / Quality

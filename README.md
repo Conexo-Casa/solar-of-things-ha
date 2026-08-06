@@ -328,9 +328,18 @@ entities:
 | "Cannot Connect" on setup | Wrong credentials or network | Check User ID / password and HA network access to solar.siseli.com |
 | No devices discovered | Wrong Station ID | Verify 18-digit stationId in the portal Network tab |
 | Entities show "Unavailable" | Token expired or portal unreachable | HA will prompt re-auth automatically; check logs |
-| Sensors always "Unknown" | API returns null for that field | Normal for sensors not supported by your inverter model |
+| Sensors always "Unknown" | Your model publishes that measurement under another attribute name | Follow [API_CAPTURE.md](API_CAPTURE.md) so the name can be added |
+| Priority selects "Unknown" | Fixed in 2.5.0 — they used to read only the remote-config cache, which is empty until a setting is written through the portal | Update the integration |
 | Controls do nothing | Settings endpoint varies by firmware | Check HA logs for HTTP status codes |
 | Integration not in search | Files in wrong location | Verify `/config/custom_components/solar_of_things/` exists |
+
+### Reporting an "Unknown" entity
+
+The quickest fix path is **Settings → Devices & Services → Solar of Things →
+⋮ → Download diagnostics**, attached to a GitHub issue. It lists every
+attribute name your inverter publishes with credentials removed, which is all
+that is needed to map a missing value. See [API_CAPTURE.md](API_CAPTURE.md) for
+that and three other capture methods.
 
 ### Enable debug logging
 ```yaml

@@ -51,6 +51,164 @@ API_STATE_LATEST   = "/apis/deviceState/simple/state/latest/v1"
 # Mirrors the portal JS which refreshes when ≤300 s remain.
 TOKEN_REFRESH_LEAD_SECONDS = 300  # 5 minutes
 
+# ─── Attribute-key candidates ──────────────────────────────────────────────────
+# Inverter models expose the same measurement under different attribute names
+# (and the state endpoint is inconsistent about capitalisation), so every lookup
+# tries a list of candidates case-insensitively.  Add a name here when a new
+# model reports one we do not know about yet — see API_CAPTURE.md for how to
+# find out which names your device actually uses.
+
+# Setting keys written through /apis/remote/device/config/write.
+SETTING_KEY_CANDIDATES: dict[str, list[str]] = {
+    "outputSourcePriority": [
+        "outputSourcePrioritySetting",
+        "outputSourcePriority",
+        "outputPrioritySetting",
+        "outputPriority",
+    ],
+    "chargerSourcePriority": [
+        "chargerSourcePrioritySetting",
+        "chargerSourcePriority",
+        "chargeSourcePrioritySetting",
+        "chargerPrioritySetting",
+        "chargingSourcePriority",
+    ],
+    "acInputRange": [
+        "acInputRangeSetting",
+        "acInputRange",
+        "inputVoltageRangeSetting",
+    ],
+    "gridFeedIn": [
+        "batteryPowerLimitingSetting",
+        "feedInGridSetting",
+        "gridFeedInSetting",
+    ],
+    "batteryChargeLimit": ["batteryChargeLimit", "batteryChargeLimitSetting"],
+    "batteryDischargeLimit": ["batteryDischargeLimit", "batteryDischargeLimitSetting"],
+    "gridChargeLimit": ["gridChargeLimit", "gridChargeLimitSetting", "maxUtilityChargingCurrent"],
+}
+
+# Live-snapshot field names from /apis/deviceState/simple/state/latest/v1.
+# The snapshot carries the *current* device state, which is what the selects and
+# switches read back — unlike the settings cache, which only holds values that
+# were previously written through the portal.
+STATE_KEY_CANDIDATES: dict[str, list[str]] = {
+    "outputSourcePriority": [
+        "outputSourcePriority",
+        "outputSourcePrioritySetting",
+        "outputPriority",
+        "outputSourcePriorityStatus",
+        "outputMode",
+    ],
+    "chargerSourcePriority": [
+        "chargerSourcePriority",
+        "chargerSourcePrioritySetting",
+        "chargeSourcePriority",
+        "chargerPriority",
+        "chargingSourcePriority",
+    ],
+    "acInputRange": ["acInputRange", "acInputRangeSetting", "inputVoltageRange"],
+    "gridFeedIn": [
+        "batteryPowerLimiting",
+        "batteryPowerLimitingSetting",
+        "feedInGrid",
+        "gridFeedIn",
+    ],
+    "batteryChargeLimit": ["batteryChargeLimit", "batteryChargeLimitSetting"],
+    "batteryDischargeLimit": ["batteryDischargeLimit", "batteryDischargeLimitSetting"],
+    "gridChargeLimit": ["gridChargeLimit", "maxUtilityChargingCurrent"],
+}
+
+# Telemetry keys that the time-series endpoint may not return for a given model.
+# When a key is missing there we fall back to the state snapshot, which reports
+# every attribute the device publishes.  Each entry is (candidates, kind); kind
+# drives unit normalisation ("power" → W, "energy" → kWh, None → as-is).
+TELEMETRY_STATE_FALLBACKS: dict[str, tuple[list[str], str | None]] = {
+    "pvInputPower": (
+        ["pvInputPower", "pvChargingPower", "PV1ChargingPower", "generationPower"],
+        "power",
+    ),
+    "acOutputActivePower": (
+        ["acOutputActivePower", "acOutputPower", "outputActivePower", "loadActivePower"],
+        "power",
+    ),
+    "feedInPower": (
+        [
+            "feedInPower",
+            "gridFeedInPower",
+            "feedInActivePower",
+            "acFeedInPower",
+            "feedbackPower",
+            "gridExportPower",
+            "exportPower",
+            "onGridPower",
+            "gridConnectedPower",
+        ],
+        "power",
+    ),
+    "batteryVoltage": (["batteryVoltage", "batteryTerminalVoltage"], None),
+    "batteryChargingCurrent": (
+        ["batteryChargingCurrent", "batteryChargeCurrent"],
+        None,
+    ),
+    "batteryDischargeCurrent": (
+        ["batteryDischargeCurrent", "batteryDischargingCurrent"],
+        None,
+    ),
+    "batterySOC": (
+        ["batterySOC", "batteryCapacity", "batteryPercentage", "soc"],
+        None,
+    ),
+}
+
+# ─── Control option maps ───────────────────────────────────────────────────────
+# Output Source Priority (outputSourcePrioritySetting): 0=USO, 1=SUB, 2=SBU.
+OUTPUT_PRIORITY_BY_VALUE: dict[int, str] = {
+    0: "Utility First (USO)",
+    1: "Solar First (SUB)",
+    2: "Solar+Battery First (SBU)",
+}
+OUTPUT_PRIORITY_OPTIONS: list[str] = list(OUTPUT_PRIORITY_BY_VALUE.values())
+
+# Alias table for resolving a text value/valueDisplay onto an option.  Keys are
+# normalised (lowercase, non-alphanumerics collapsed to single spaces).
+OUTPUT_PRIORITY_ALIASES: dict[str, str] = {
+    "uso": OUTPUT_PRIORITY_BY_VALUE[0],
+    "utility": OUTPUT_PRIORITY_BY_VALUE[0],
+    "utility first": OUTPUT_PRIORITY_BY_VALUE[0],
+    "utility priority": OUTPUT_PRIORITY_BY_VALUE[0],
+    "grid first": OUTPUT_PRIORITY_BY_VALUE[0],
+    "sub": OUTPUT_PRIORITY_BY_VALUE[1],
+    "solar first": OUTPUT_PRIORITY_BY_VALUE[1],
+    "solar priority": OUTPUT_PRIORITY_BY_VALUE[1],
+    "solar utility battery": OUTPUT_PRIORITY_BY_VALUE[1],
+    "sbu": OUTPUT_PRIORITY_BY_VALUE[2],
+    "battery first": OUTPUT_PRIORITY_BY_VALUE[2],
+    "solar battery first": OUTPUT_PRIORITY_BY_VALUE[2],
+    "solar battery utility": OUTPUT_PRIORITY_BY_VALUE[2],
+}
+
+# Charger Source Priority (chargerSourcePrioritySetting): 0=CSO, 1=SNU, 2=OSO.
+CHARGER_PRIORITY_BY_VALUE: dict[int, str] = {
+    0: "Solar + Utility (CSO)",
+    1: "Solar First (SNU)",
+    2: "Solar Only (OSO)",
+}
+CHARGER_PRIORITY_OPTIONS: list[str] = list(CHARGER_PRIORITY_BY_VALUE.values())
+
+CHARGER_PRIORITY_ALIASES: dict[str, str] = {
+    "cso": CHARGER_PRIORITY_BY_VALUE[0],
+    "solar utility": CHARGER_PRIORITY_BY_VALUE[0],
+    "solar and utility": CHARGER_PRIORITY_BY_VALUE[0],
+    "utility first": CHARGER_PRIORITY_BY_VALUE[0],
+    "snu": CHARGER_PRIORITY_BY_VALUE[1],
+    "solar first": CHARGER_PRIORITY_BY_VALUE[1],
+    "solar priority": CHARGER_PRIORITY_BY_VALUE[1],
+    "oso": CHARGER_PRIORITY_BY_VALUE[2],
+    "solar only": CHARGER_PRIORITY_BY_VALUE[2],
+    "only solar": CHARGER_PRIORITY_BY_VALUE[2],
+}
+
 # ─── Sensor keys ───────────────────────────────────────────────────────────────
 SENSOR_KEYS = [
     "pvInputPower",

@@ -75,16 +75,14 @@ jobs:
         run: |
           cd custom_components/solar_of_things
           python3 -m py_compile \
-            __init__.py api.py config_flow.py const.py \
-            sensor.py number.py select.py switch.py
+            __init__.py api.py config_flow.py const.py diagnostics.py \
+            helpers.py sensor.py number.py select.py switch.py
+          python3 -m py_compile ../../tools/dump_solar_api.py
           echo "Python syntax OK"
 
-      - name: Run unit tests (if present)
+      - name: Run unit tests
         run: |
-          pip install --quiet pytest pytest-asyncio || true
-          if [ -d tests ]; then
-            python3 -m pytest tests/ -v --tb=short \
-              || echo "Tests completed (failures tolerated without full HA fixtures)"
-          else
-            echo "No tests directory — skipping"
-          fi
+          pip install --quiet pytest pytest-asyncio
+          # The value-resolution tests run without Home Assistant installed;
+          # the config-flow tests skip themselves when the HA harness is absent.
+          python3 -m pytest tests/ -v --tb=short

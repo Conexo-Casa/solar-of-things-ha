@@ -1,15 +1,36 @@
-"""Test configuration for Solar of Things integration."""
-import pytest
-from homeassistant.core import HomeAssistant
-from homeassistant.config_entries import ConfigEntry
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+"""Test configuration for Solar of Things integration.
 
-from custom_components.solar_of_things.const import DOMAIN
+Home Assistant is an optional test dependency: the pure-logic tests
+(``test_value_resolution.py``) run without it, so the HA imports are guarded
+and the fixtures that need it skip instead of breaking collection for the
+whole directory.
+"""
+import sys
+from pathlib import Path
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _component import load  # noqa: E402 — needs the path insertion above
+
+try:
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    HA_AVAILABLE = True
+except ImportError:  # pragma: no cover — depends on the environment
+    MockConfigEntry = None
+    HA_AVAILABLE = False
+
+# Loaded without importing the package __init__, which pulls in Home Assistant.
+DOMAIN = load("const").DOMAIN
 
 
 @pytest.fixture
-def mock_config_entry() -> ConfigEntry:
+def mock_config_entry():
     """Return a mock config entry."""
+    if not HA_AVAILABLE:
+        pytest.skip("Home Assistant test harness is not installed")
     return MockConfigEntry(
         domain=DOMAIN,
         data={

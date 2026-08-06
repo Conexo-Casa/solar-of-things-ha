@@ -20,7 +20,16 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, SENSOR_DEFINITIONS
+from .const import DOMAIN, SENSOR_DEFINITIONS, STATE_KEY_CANDIDATES
+from .helpers import (
+    entry_display,
+    entry_unit,
+    entry_value,
+    find_entry,
+    scale_value,
+    state_fields,
+    to_float,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -248,12 +257,20 @@ STATE_SENSORS: list[dict] = [
     {"key": "pv1InputCurrent", "name": "PV1 Current", "unit": UnitOfElectricCurrent.AMPERE, "device_class": _DC.CURRENT, "state_class": _SC.MEASUREMENT, "icon": "mdi:solar-panel"},
     {"key": "PV1ChargingPower", "name": "PV1 Power", "unit": UnitOfPower.WATT, "device_class": _DC.POWER, "state_class": _SC.MEASUREMENT, "icon": "mdi:solar-power"},
     {"key": "pvGeneratedEnergyOfDay", "name": "PV Generated", "unit": UnitOfEnergy.KILO_WATT_HOUR, "device_class": _DC.ENERGY, "state_class": _SC.TOTAL_INCREASING, "icon": "mdi:solar-power"},
-    # Diagnostic text sensors (current mode — useful while select read-back is unfixed)
+    # Diagnostic text sensors reporting the mode the device is actually in.
+    # These read the same snapshot fields as the select entities, so they are a
+    # quick way to see the raw label the API returned for a mode.
     {"key": "workingMode", "name": "Working Mode", "text": True, "diagnostic": True, "icon": "mdi:state-machine"},
-    {"key": "chargerSourcePriority", "name": "Charger Priority (current)", "text": True, "diagnostic": True, "icon": "mdi:battery-sync"},
-    {"key": "outputSourcePriority", "name": "Output Priority (current)", "text": True, "diagnostic": True, "icon": "mdi:cog"},
+    {"key": "chargerSourcePriority", "name": "Charger Priority (current)", "text": True, "diagnostic": True, "icon": "mdi:battery-sync", "candidates": STATE_KEY_CANDIDATES["chargerSourcePriority"]},
+    {"key": "outputSourcePriority", "name": "Output Priority (current)", "text": True, "diagnostic": True, "icon": "mdi:cog", "candidates": STATE_KEY_CANDIDATES["outputSourcePriority"]},
     {"key": "chargingStatus", "name": "Charging Status", "text": True, "diagnostic": True, "icon": "mdi:battery-charging"},
 ]
+
+# device_class → the unit family used to normalise a snapshot reading.
+_SCALE_KIND_BY_DEVICE_CLASS = {
+    _DC.POWER: "power",
+    _DC.ENERGY: "energy",
+}
 
 
 class SolarOfThingsStateSensor(CoordinatorEntity, SensorEntity):
@@ -265,7 +282,9 @@ class SolarOfThingsStateSensor(CoordinatorEntity, SensorEntity):
         self._device_id = device_id
         self._device_name = device_name
         self._key = definition["key"]
+        self._candidates = definition.get("candidates") or [self._key]
         self._is_text = definition.get("text", False)
+        self._scale_kind = _SCALE_KIND_BY_DEVICE_CLASS.get(definition.get("device_class"))
         self._attr_has_entity_name = True
         self._attr_name = definition["name"]
         self._attr_unique_id = f"{DOMAIN}_{station_id}_{device_id}_state_{self._key}"
@@ -288,20 +307,24 @@ class SolarOfThingsStateSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self):
-        fields = (((self.coordinator.data or {}).get("state") or {}).get("fields") or {})
-        entry = fields.get(self._key)
-        if not isinstance(entry, dict):
+        # Candidate lookup is case-insensitive: the snapshot is inconsistent
+        # about capitalisation (PV1InputVoltage vs pv1InputCurrent) and some
+        # models publish a measurement under an alternative name entirely.
+        _key, entry = find_entry(
+            state_fields((self.coordinator.data or {}).get("state")), self._candidates
+        )
+        if entry is None:
             return None
+
         if self._is_text:
-            disp = entry.get("valueDisplay")
-            return disp if disp not in (None, "") else entry.get("value")
-        val = entry.get("value")
-        if val in (None, ""):
+            display = entry_display(entry)
+            value = display if display not in (None, "") else entry_value(entry)
+            return value if value not in (None, "") else None
+
+        number = to_float(entry_value(entry))
+        if number is None:
             return None
-        try:
-            return round(float(val), 2)
-        except (TypeError, ValueError):
-            return None
+        return round(scale_value(number, entry_unit(entry), self._scale_kind), 2)
 
 
 class SolarOfThingsAlarmSensor(CoordinatorEntity, SensorEntity):

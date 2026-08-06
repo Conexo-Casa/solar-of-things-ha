@@ -91,10 +91,14 @@ from .const import (
     API_DEVICE_LIST,
     API_SETTINGS_GET,
     API_SETTINGS_SET,
+    CHARGER_PRIORITY_BY_VALUE,
     IOT_APP_ID,
     IOT_APP_SECRET_ENC,
+    OUTPUT_PRIORITY_BY_VALUE,
+    TELEMETRY_STATE_FALLBACKS,
     TOKEN_REFRESH_LEAD_SECONDS,
 )
+from .helpers import state_fields, state_number
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -206,6 +210,66 @@ def _parse_expiry(value: str | None) -> datetime | None:
         return dt.astimezone(timezone.utc)
     except Exception:
         return None
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Telemetry assembly
+# ──────────────────────────────────────────────────────────────────────────────
+
+def compute_derived_values(values: dict[str, Any]) -> dict[str, Any]:
+    """Fill in batteryPower / gridPower / loadPower from the raw measurements.
+
+    Idempotent, so it can be re-run after the state-snapshot fallbacks have
+    supplied keys that the time-series endpoint did not return.
+    """
+    def _num(key: str) -> float:
+        try:
+            return float(values.get(key) or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    voltage = _num("batteryVoltage")
+    discharge = _num("batteryDischargeCurrent")
+    charge = _num("batteryChargingCurrent")
+    values["batteryPower"] = (discharge - charge) * voltage
+
+    pv_power = _num("pvInputPower")
+    ac_output = _num("acOutputActivePower")
+    feed_in = _num("feedInPower")
+    battery_power = _num("batteryPower")
+
+    values["gridPower"] = max(0.0, ac_output - pv_power + battery_power + feed_in)
+    values["loadPower"] = ac_output
+    return values
+
+
+def merge_state_fallbacks(
+    latest: dict[str, Any], state: dict[str, Any] | None
+) -> dict[str, Any]:
+    """Fill telemetry keys the time-series endpoint omitted from the snapshot.
+
+    The history endpoint only returns keys the model actually records under the
+    exact name we asked for, so measurements such as ``feedInPower`` come back
+    empty on inverters that publish them under a different attribute name.  The
+    state/latest snapshot carries every attribute the device reports, so we use
+    it as the fallback source and then recompute the derived values.
+    """
+    fields = state_fields(state)
+    if not fields:
+        return latest
+
+    for key, (candidates, kind) in TELEMETRY_STATE_FALLBACKS.items():
+        if latest.get(key) not in (None, ""):
+            continue
+        value = state_number(fields, candidates, kind)
+        if value is not None:
+            latest[key] = value
+            _LOGGER.debug(
+                "SolarOfThings: %s not in time-series; using state snapshot (%s)",
+                key, value,
+            )
+
+    return compute_derived_values(latest)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -601,7 +665,9 @@ class SolarOfThingsAPI:
             "acOutputActivePower",
             "batteryDischargeCurrent", "batteryChargingCurrent", "batteryVoltage",
             "batterySOC", "batteryCapacity", "batteryPercentage",
-            "feedInPower",
+            # Feed-in is named differently across models; request every variant
+            # we know of — the endpoint simply omits the ones it doesn't have.
+            "feedInPower", "gridFeedInPower", "feedInActivePower", "onGridPower",
         ]
 
         data = self._post(
@@ -657,6 +723,21 @@ class SolarOfThingsAPI:
             if soc not in (None, ""):
                 latest_values["batterySOC"] = soc
 
+        # Remaining aliases: the history endpoint returns whichever attribute
+        # name the model records, so normalise the known alternates onto our
+        # canonical keys.  Values from this endpoint share the canonical key's
+        # unit, so no scaling is applied here (the kW cases above are explicit).
+        for canonical, (candidates, _kind) in TELEMETRY_STATE_FALLBACKS.items():
+            if latest_values.get(canonical) not in (None, ""):
+                continue
+            for alias in candidates:
+                if alias == canonical:
+                    continue
+                value = latest_values.get(alias)
+                if value not in (None, ""):
+                    latest_values[canonical] = value
+                    break
+
         # Unit normalisation: acOutputActivePower is kW in API → W
         if "acOutputActivePower" in latest_values:
             try:
@@ -666,19 +747,7 @@ class SolarOfThingsAPI:
             except Exception:
                 pass
 
-        # Derived values
-        voltage = float(latest_values.get("batteryVoltage") or 0)
-        discharge = float(latest_values.get("batteryDischargeCurrent") or 0)
-        charge = float(latest_values.get("batteryChargingCurrent") or 0)
-        latest_values["batteryPower"] = (discharge - charge) * voltage
-
-        pv_power = float(latest_values.get("pvInputPower") or 0)
-        ac_output = float(latest_values.get("acOutputActivePower") or 0)
-        feed_in = float(latest_values.get("feedInPower") or 0)
-        battery_power = float(latest_values.get("batteryPower") or 0)
-
-        latest_values["gridPower"] = max(0.0, ac_output - pv_power + battery_power + feed_in)
-        latest_values["loadPower"] = ac_output
+        compute_derived_values(latest_values)
 
         return latest_values
 
@@ -790,21 +859,13 @@ class SolarOfThingsAPI:
     # batteryPowerLimitingSetting: 0=OFF, 1=ON  (GRID switch)
     # acInputRangeSetting:         0=Appliance, 1=UPS
 
-    # Operating-mode select maps HA option strings to integer values
-    _OUTPUT_MODE_MAP: dict[str, int] = {
-        "Utility First (USO)": 0,
-        "Solar First (SUB)": 1,
-        "Solar+Battery First (SBU)": 2,
-    }
-    _OUTPUT_MODE_REVERSE: dict[int, str] = {v: k for k, v in _OUTPUT_MODE_MAP.items()}
+    # Option-string → integer maps, inverted from the single definition in
+    # const.py so the write path and the select read-back cannot drift apart.
+    _OUTPUT_MODE_REVERSE: dict[int, str] = OUTPUT_PRIORITY_BY_VALUE
+    _OUTPUT_MODE_MAP: dict[str, int] = {v: k for k, v in OUTPUT_PRIORITY_BY_VALUE.items()}
 
-    # Charger-priority select
-    _CHARGER_PRIORITY_MAP: dict[str, int] = {
-        "Solar + Utility (CSO)": 0,
-        "Solar First (SNU)": 1,
-        "Solar Only (OSO)": 2,
-    }
-    _CHARGER_PRIORITY_REVERSE: dict[int, str] = {v: k for k, v in _CHARGER_PRIORITY_MAP.items()}
+    _CHARGER_PRIORITY_REVERSE: dict[int, str] = CHARGER_PRIORITY_BY_VALUE
+    _CHARGER_PRIORITY_MAP: dict[str, int] = {v: k for k, v in CHARGER_PRIORITY_BY_VALUE.items()}
 
     def set_operating_mode(self, device_id: str, mode: str) -> None:
         """Set Output Source Priority.  mode is one of _OUTPUT_MODE_MAP keys."""
