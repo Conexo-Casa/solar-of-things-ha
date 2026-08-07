@@ -256,7 +256,17 @@ STATE_SENSORS: list[dict] = [
     {"key": "PV1InputVoltage", "name": "PV1 Voltage", "unit": UnitOfElectricPotential.VOLT, "device_class": _DC.VOLTAGE, "state_class": _SC.MEASUREMENT, "icon": "mdi:solar-panel"},
     {"key": "pv1InputCurrent", "name": "PV1 Current", "unit": UnitOfElectricCurrent.AMPERE, "device_class": _DC.CURRENT, "state_class": _SC.MEASUREMENT, "icon": "mdi:solar-panel"},
     {"key": "PV1ChargingPower", "name": "PV1 Power", "unit": UnitOfPower.WATT, "device_class": _DC.POWER, "state_class": _SC.MEASUREMENT, "icon": "mdi:solar-power"},
-    {"key": "pvGeneratedEnergyOfDay", "name": "PV Generated", "unit": UnitOfEnergy.KILO_WATT_HOUR, "device_class": _DC.ENERGY, "state_class": _SC.TOTAL_INCREASING, "icon": "mdi:solar-power"},
+    {"key": "PV2InputVoltage", "name": "PV2 Voltage", "unit": UnitOfElectricPotential.VOLT, "device_class": _DC.VOLTAGE, "state_class": _SC.MEASUREMENT, "icon": "mdi:solar-panel"},
+    {"key": "pv2InputCurrent", "name": "PV2 Current", "unit": UnitOfElectricCurrent.AMPERE, "device_class": _DC.CURRENT, "state_class": _SC.MEASUREMENT, "icon": "mdi:solar-panel"},
+    {"key": "PV2ChargingPower", "name": "PV2 Power", "unit": UnitOfPower.WATT, "device_class": _DC.POWER, "state_class": _SC.MEASUREMENT, "icon": "mdi:solar-power"},
+    # Despite the key name, the device reports lifetime PV production here —
+    # its own label is "Total photovoltaic power generation".
+    {"key": "pvGeneratedEnergyOfDay", "name": "PV Total Production", "unit": UnitOfEnergy.KILO_WATT_HOUR, "device_class": _DC.ENERGY, "state_class": _SC.TOTAL_INCREASING, "icon": "mdi:solar-power"},
+    {"key": "batteryFloatVoltage", "name": "Battery Float Voltage", "unit": UnitOfElectricPotential.VOLT, "device_class": _DC.VOLTAGE, "state_class": _SC.MEASUREMENT, "diagnostic": True, "icon": "mdi:battery-heart-variant"},
+    {"key": "batteryBulkVoltage", "name": "Battery Bulk Voltage", "unit": UnitOfElectricPotential.VOLT, "device_class": _DC.VOLTAGE, "state_class": _SC.MEASUREMENT, "diagnostic": True, "icon": "mdi:battery-heart-variant"},
+    {"key": "optionalValueForMaximumChargingCurrent", "name": "Max Charging Current", "unit": UnitOfElectricCurrent.AMPERE, "device_class": _DC.CURRENT, "state_class": _SC.MEASUREMENT, "diagnostic": True, "icon": "mdi:battery-arrow-up"},
+    {"key": "optionalMaximumUtilityChargingCurrent", "name": "Max Utility Charging Current", "unit": UnitOfElectricCurrent.AMPERE, "device_class": _DC.CURRENT, "state_class": _SC.MEASUREMENT, "diagnostic": True, "icon": "mdi:transmission-tower-import"},
+    {"key": "maxDischargingCurren", "name": "Max Discharging Current", "unit": UnitOfElectricCurrent.AMPERE, "device_class": _DC.CURRENT, "state_class": _SC.MEASUREMENT, "diagnostic": True, "icon": "mdi:battery-arrow-down"},
     # Diagnostic text sensors reporting the mode the device is actually in.
     # These read the same snapshot fields as the select entities, so they are a
     # quick way to see the raw label the API returned for a mode.
@@ -264,6 +274,15 @@ STATE_SENSORS: list[dict] = [
     {"key": "chargerSourcePriority", "name": "Charger Priority (current)", "text": True, "diagnostic": True, "icon": "mdi:battery-sync", "candidates": STATE_KEY_CANDIDATES["chargerSourcePriority"]},
     {"key": "outputSourcePriority", "name": "Output Priority (current)", "text": True, "diagnostic": True, "icon": "mdi:cog", "candidates": STATE_KEY_CANDIDATES["outputSourcePriority"]},
     {"key": "chargingStatus", "name": "Charging Status", "text": True, "diagnostic": True, "icon": "mdi:battery-charging"},
+    {"key": "acChargingStatus", "name": "AC Charging Status", "text": True, "diagnostic": True, "icon": "mdi:transmission-tower-import"},
+    {"key": "sccChargingStatus", "name": "Solar Charging Status", "text": True, "diagnostic": True, "icon": "mdi:solar-power"},
+    # Read-only: the device reports its input voltage range but the portal
+    # exposes no write key for it, so this is a sensor rather than a switch.
+    {"key": "inputVoltageRange", "name": "Input Voltage Range", "text": True, "diagnostic": True, "icon": "mdi:sine-wave", "candidates": STATE_KEY_CANDIDATES["acInputRange"]},
+    {"key": "loadStatus", "name": "Load Status", "text": True, "diagnostic": True, "icon": "mdi:power-plug"},
+    {"key": "modelName", "name": "Model", "text": True, "diagnostic": True, "icon": "mdi:information-outline"},
+    {"key": "serialNumber", "name": "Serial Number", "text": True, "diagnostic": True, "icon": "mdi:identifier"},
+    {"key": "mainCpuFirmwareVersion", "name": "Firmware Version", "text": True, "diagnostic": True, "icon": "mdi:chip"},
 ]
 
 # device_class → the unit family used to normalise a snapshot reading.

@@ -48,7 +48,7 @@ The **Solar of Things** integration connects Home Assistant to the
 - **Auto-discovery** of every inverter under your station — enter your Station ID once and Home Assistant finds all devices automatically.
 - **10+ real-time sensors** updated every 5 minutes.
 - **4 monthly summary sensors** for energy totals and solar coverage.
-- **8 control entities** (sliders, dropdowns, switches) to manage battery limits, operating modes, and grid settings from HA.
+- **15 control entities** (dropdowns, switches, numbers) to manage charge/output priority, grid feed-in, and device behaviour from HA.
 - Full **Home Assistant Energy Dashboard** compatibility.
 - **Multi-station support** — add the integration once per station.
 
@@ -63,7 +63,7 @@ The **Solar of Things** integration connects Home Assistant to the
 | 🔍 **Auto-discovery** | Enter Station ID → HA fetches all device IDs automatically |
 | 📊 **Real-time monitoring** | 10 per-device sensors, updated every 5 min |
 | 📅 **Monthly statistics** | 4 station-level energy summary sensors |
-| 🎛️ **System control** | 8 control entities (battery limits, modes, grid switches) |
+| 🎛️ **System control** | 15 control entities (priorities, grid feed-in, device settings) |
 | ⚡ **Energy Dashboard** | All power and energy sensors are dashboard-ready |
 | 🏠 **Multi-station** | Unlimited stations via multiple config entries |
 | 🔒 **Secure auth** | User ID + Password with automatic token refresh |
@@ -86,7 +86,7 @@ The **Solar of Things** integration connects Home Assistant to the
 | `{device} Battery Voltage` | V | `voltage` | Battery bank terminal voltage |
 | `{device} Battery Power` | W | `power` | Net battery power (discharge − charge × voltage) |
 | `{device} Battery State of Charge` | % | `battery` | Battery charge level |
-| `{device} Grid Feed-in Power` | W | `power` | Power exported to the utility grid |
+| `{device} Grid Feed-in Power` | W | `power` | Power exported to the grid — reads 0 on off-grid models, which report no feed-in measurement |
 | `{device} Grid Import Power` | W | `power` | Power imported from the utility grid |
 | `{device} Load Power` | W | `power` | Total household / load consumption |
 
@@ -107,28 +107,35 @@ The **Solar of Things** integration connects Home Assistant to the
 > Controls require your device firmware/account to support the settings API.
 > If unresponsive, see [Troubleshooting](#troubleshooting).
 
-### Number Entities (Sliders)
+### Number Entities
 
 | Entity | Range | Step | Unit | Description |
 |---|---|---|---|---|
-| `{device} Battery Charge Limit` | 0 – 100 | 1 | % | Maximum SOC target for charging |
-| `{device} Battery Discharge Limit` | 0 – 100 | 1 | % | Minimum SOC before stopping discharge |
-| `{device} Grid Charge Limit` | 0 – 5000 | 100 | W | Max grid power used for battery charging |
+| `{device} Battery Equalization Voltage` | 20 – 60 | 0.1 | V | Equalization charge voltage |
+| `{device} Battery Equalization Period` | 0 – 99 | 1 | d | Days between equalization cycles |
+| `{device} Battery Equalization Timeout` | 0 – 900 | 5 | min | Maximum equalization duration |
 
 ### Select Entities (Dropdowns)
 
 | Entity | Options | Description |
 |---|---|---|
 | `{device} Output Source Priority` | Utility First (USO) · Solar First (SUB) · Solar+Battery First (SBU) | System power source priority |
-| `{device} Charger Source Priority` | Solar + Utility (CSO) · Solar First (SNU) · Solar Only (OSO) | Battery charging source priority |
+| `{device} Charger Source Priority` | Utility First · Solar First · Solar + Utility · Solar Only | Battery charging source priority |
 
 ### Switch Entities
 
 | Entity | Description |
 |---|---|
-| `{device} Grid Charging (AC Input Range)` | Allow/deny battery charging from the grid (Appliance vs UPS mode) |
-| `{device} Grid Feed-In` | Allow/deny exporting excess power to the grid |
 | `{device} Backup Mode (SBU Priority)` | Reserve battery capacity for power outages (SBU vs SUB priority) |
+| `{device} Solar Feed to Grid` | Allow/deny exporting excess solar to the grid |
+| `{device} Buzzer` | Audible alarm on/off |
+| `{device} Overload Bypass` | Pass the load through to the grid on overload |
+| `{device} Overload Restart` | Auto-restart after an overload shutdown |
+| `{device} Over-temperature Restart` | Auto-restart after a thermal shutdown |
+| `{device} LCD Backlight` | Front-panel backlight |
+| `{device} LCD Return to Default Page` | Return the panel to its default page |
+| `{device} Fault Code Recording` | Record fault codes on the device |
+| `{device} Alarm on Primary Source Interrupt` | Beep when the primary source drops |
 
 ---
 
@@ -244,17 +251,19 @@ automation:
             {{ states('sensor.1_inverter_battery_state_of_charge') }}%.
 ```
 
-### Enable grid charging at night
+### Allow grid charging at night
 ```yaml
 automation:
-  - alias: "Solar — Enable Grid Charging at Night"
+  - alias: "Solar — Allow Grid Charging at Night"
     trigger:
       - platform: time
         at: "22:00:00"
     action:
-      - service: switch.turn_on
+      - service: select.select_option
         target:
-          entity_id: switch.1_inverter_grid_charging_ac_input_range
+          entity_id: select.1_inverter_charger_source_priority
+        data:
+          option: "Solar + Utility"
 ```
 
 ### Switch to backup mode before a storm
@@ -273,11 +282,11 @@ automation:
       - service: switch.turn_on
         target:
           entity_id: switch.1_inverter_backup_mode_sbu_priority
-      - service: number.set_value
+      - service: select.select_option
         target:
-          entity_id: number.1_inverter_battery_charge_limit
+          entity_id: select.1_inverter_charger_source_priority
         data:
-          value: 95
+          option: "Solar + Utility"
 ```
 
 ---
@@ -310,13 +319,13 @@ entities:
     name: Output Mode
   - entity: select.1_inverter_charger_source_priority
     name: Charger Priority
-  - entity: number.1_inverter_battery_charge_limit
-  - entity: number.1_inverter_battery_discharge_limit
-  - entity: number.1_inverter_grid_charge_limit
   - type: divider
-  - entity: switch.1_inverter_grid_charging_ac_input_range
-  - entity: switch.1_inverter_grid_feed_in
   - entity: switch.1_inverter_backup_mode_sbu_priority
+  - entity: switch.1_inverter_solar_feed_to_grid
+  - entity: switch.1_inverter_buzzer
+  - type: divider
+  - entity: number.1_inverter_battery_equalization_voltage
+  - entity: number.1_inverter_battery_equalization_period
 ```
 
 ---
