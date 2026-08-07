@@ -1,9 +1,16 @@
-"""Test the Solar of Things config flow."""
+"""Test the Solar of Things config flow.
+
+Requires a Home Assistant test harness (``pytest-homeassistant-custom-component``);
+the module skips itself when one is not installed.
+"""
 from unittest.mock import patch
 
 import pytest
-from homeassistant import config_entries, data_entry_flow
-from homeassistant.core import HomeAssistant
+
+pytest.importorskip("homeassistant", reason="Home Assistant is not installed")
+
+from homeassistant import config_entries, data_entry_flow  # noqa: E402
+from homeassistant.core import HomeAssistant  # noqa: E402
 
 from custom_components.solar_of_things.const import DOMAIN
 

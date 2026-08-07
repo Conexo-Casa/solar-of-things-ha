@@ -34,7 +34,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import SolarOfThingsAPI, TokenExpiredError
+from .api import SolarOfThingsAPI, TokenExpiredError, merge_state_fallbacks
 from .const import (
     DOMAIN,
     CONF_USER_ID,
@@ -47,6 +47,7 @@ from .const import (
     CONF_ACCESS_TOKEN_EXPIRES,
     CONF_REFRESH_TOKEN_EXPIRES,
 )
+from .helpers import state_fields
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -256,11 +257,39 @@ class SolarOfThingsDeviceCoordinator(DataUpdateCoordinator):
         self.device_id = device
         self.device_meta = device_meta
         self._entry = entry
+        self._keys_logged = False
         super().__init__(
             hass,
             _LOGGER,
             name=f"{DOMAIN}_device_{device}",
             update_interval=DEVICE_UPDATE_INTERVAL,
+        )
+
+    def _log_available_keys(
+        self,
+        time_series: dict[str, Any],
+        settings: dict[str, Any],
+        state: dict[str, Any],
+    ) -> None:
+        """Log every attribute name this device exposes, once per HA run.
+
+        An entity that reads "unknown" almost always means the model publishes
+        the measurement under a name the integration does not know yet.  With
+        debug logging enabled these three lists show exactly which names are
+        available, so a missing one can be added to the candidate lists in
+        const.py (see API_CAPTURE.md).
+        """
+        if self._keys_logged or not _LOGGER.isEnabledFor(logging.DEBUG):
+            return
+        self._keys_logged = True
+        fields = state_fields(state)
+        _LOGGER.debug(
+            "SolarOfThings device %s attribute names — "
+            "time-series: %s | settings-cache: %s | state-snapshot: %s",
+            self.device_id,
+            sorted(time_series),
+            sorted(settings or {}),
+            sorted(fields),
         )
 
     async def _async_update_data(self) -> dict[str, Any]:
@@ -271,9 +300,30 @@ class SolarOfThingsDeviceCoordinator(DataUpdateCoordinator):
             settings = await self.hass.async_add_executor_job(
                 self.api.fetch_settings, self.device_id
             )
+            try:
+                state = await self.hass.async_add_executor_job(
+                    self.api.fetch_state, self.device_id
+                )
+            except TokenExpiredError:
+                raise
+            except Exception as err:
+                _LOGGER.warning(
+                    "SolarOfThings device %s: state fetch failed: %s", self.device_id, err
+                )
+                state = {}
+
+            # Logged before merging so each list shows what its own endpoint
+            # actually returned.
+            self._log_available_keys(time_series, settings, state)
+
+            # The time-series endpoint only returns the attribute names it
+            # knows; anything it omitted is filled from the live snapshot.
+            time_series = merge_state_fallbacks(time_series, state)
+
             return {
                 "time_series": time_series,
                 "settings": settings,
+                "state": state,
                 "device": self.device_id,
                 "station_id": self.station_id,
                 "device_meta": self.device_meta,

@@ -7,16 +7,29 @@ from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, Sen
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     PERCENTAGE,
+    EntityCategory,
+    UnitOfApparentPower,
     UnitOfElectricCurrent,
     UnitOfElectricPotential,
     UnitOfEnergy,
+    UnitOfFrequency,
     UnitOfPower,
+    UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, SENSOR_DEFINITIONS
+from .const import DOMAIN, SENSOR_DEFINITIONS, STATE_KEY_CANDIDATES
+from .helpers import (
+    entry_display,
+    entry_unit,
+    entry_value,
+    find_entry,
+    scale_value,
+    state_fields,
+    to_float,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -71,6 +84,19 @@ async def async_setup_entry(
                     sensor_definition=definition,
                 )
             )
+
+        # State-endpoint sensors (temperature, voltages, freq, daily energy, mode)
+        for definition in STATE_SENSORS:
+            entities.append(
+                SolarOfThingsStateSensor(
+                    coordinator, station_id, device_id, device_name, definition
+                )
+            )
+
+        # Active-alarms sensor
+        entities.append(
+            SolarOfThingsAlarmSensor(coordinator, station_id, device_id, device_name)
+        )
 
     # Station-level monthly sensors
     if station_coordinator:
@@ -214,3 +240,144 @@ class SolarOfThingsStationMonthlySensor(CoordinatorEntity, SensorEntity):
             return round(float(val), 2)
         except Exception:
             return None
+
+
+# State-endpoint sensors (read from coordinator.data["state"]["fields"]).
+_SC, _DC = SensorStateClass, SensorDeviceClass
+STATE_SENSORS: list[dict] = [
+    {"key": "inverterHeatSinkTemperature", "name": "Inverter Temperature", "unit": UnitOfTemperature.CELSIUS, "device_class": _DC.TEMPERATURE, "state_class": _SC.MEASUREMENT, "icon": "mdi:thermometer"},
+    {"key": "busVoltage", "name": "Bus Voltage", "unit": UnitOfElectricPotential.VOLT, "device_class": _DC.VOLTAGE, "state_class": _SC.MEASUREMENT, "icon": "mdi:flash"},
+    {"key": "acOutputVoltage", "name": "AC Output Voltage", "unit": UnitOfElectricPotential.VOLT, "device_class": _DC.VOLTAGE, "state_class": _SC.MEASUREMENT, "icon": "mdi:sine-wave"},
+    {"key": "acOutputFrequency", "name": "AC Output Frequency", "unit": UnitOfFrequency.HERTZ, "device_class": _DC.FREQUENCY, "state_class": _SC.MEASUREMENT, "icon": "mdi:sine-wave"},
+    {"key": "acOutputApparentPower", "name": "AC Output Apparent Power", "unit": UnitOfApparentPower.VOLT_AMPERE, "device_class": _DC.APPARENT_POWER, "state_class": _SC.MEASUREMENT, "icon": "mdi:power-plug"},
+    {"key": "outputLoadPercent", "name": "Output Load", "unit": PERCENTAGE, "device_class": None, "state_class": _SC.MEASUREMENT, "icon": "mdi:gauge"},
+    {"key": "gridVoltage", "name": "Grid Voltage", "unit": UnitOfElectricPotential.VOLT, "device_class": _DC.VOLTAGE, "state_class": _SC.MEASUREMENT, "icon": "mdi:transmission-tower"},
+    {"key": "gridFrequency", "name": "Grid Frequency", "unit": UnitOfFrequency.HERTZ, "device_class": _DC.FREQUENCY, "state_class": _SC.MEASUREMENT, "icon": "mdi:transmission-tower"},
+    {"key": "PV1InputVoltage", "name": "PV1 Voltage", "unit": UnitOfElectricPotential.VOLT, "device_class": _DC.VOLTAGE, "state_class": _SC.MEASUREMENT, "icon": "mdi:solar-panel"},
+    {"key": "pv1InputCurrent", "name": "PV1 Current", "unit": UnitOfElectricCurrent.AMPERE, "device_class": _DC.CURRENT, "state_class": _SC.MEASUREMENT, "icon": "mdi:solar-panel"},
+    {"key": "PV1ChargingPower", "name": "PV1 Power", "unit": UnitOfPower.WATT, "device_class": _DC.POWER, "state_class": _SC.MEASUREMENT, "icon": "mdi:solar-power"},
+    {"key": "PV2InputVoltage", "name": "PV2 Voltage", "unit": UnitOfElectricPotential.VOLT, "device_class": _DC.VOLTAGE, "state_class": _SC.MEASUREMENT, "icon": "mdi:solar-panel"},
+    {"key": "pv2InputCurrent", "name": "PV2 Current", "unit": UnitOfElectricCurrent.AMPERE, "device_class": _DC.CURRENT, "state_class": _SC.MEASUREMENT, "icon": "mdi:solar-panel"},
+    {"key": "PV2ChargingPower", "name": "PV2 Power", "unit": UnitOfPower.WATT, "device_class": _DC.POWER, "state_class": _SC.MEASUREMENT, "icon": "mdi:solar-power"},
+    # Despite the key name, the device reports lifetime PV production here —
+    # its own label is "Total photovoltaic power generation".
+    {"key": "pvGeneratedEnergyOfDay", "name": "PV Total Production", "unit": UnitOfEnergy.KILO_WATT_HOUR, "device_class": _DC.ENERGY, "state_class": _SC.TOTAL_INCREASING, "icon": "mdi:solar-power"},
+    {"key": "batteryFloatVoltage", "name": "Battery Float Voltage", "unit": UnitOfElectricPotential.VOLT, "device_class": _DC.VOLTAGE, "state_class": _SC.MEASUREMENT, "diagnostic": True, "icon": "mdi:battery-heart-variant"},
+    {"key": "batteryBulkVoltage", "name": "Battery Bulk Voltage", "unit": UnitOfElectricPotential.VOLT, "device_class": _DC.VOLTAGE, "state_class": _SC.MEASUREMENT, "diagnostic": True, "icon": "mdi:battery-heart-variant"},
+    {"key": "optionalValueForMaximumChargingCurrent", "name": "Max Charging Current", "unit": UnitOfElectricCurrent.AMPERE, "device_class": _DC.CURRENT, "state_class": _SC.MEASUREMENT, "diagnostic": True, "icon": "mdi:battery-arrow-up"},
+    {"key": "optionalMaximumUtilityChargingCurrent", "name": "Max Utility Charging Current", "unit": UnitOfElectricCurrent.AMPERE, "device_class": _DC.CURRENT, "state_class": _SC.MEASUREMENT, "diagnostic": True, "icon": "mdi:transmission-tower-import"},
+    {"key": "maxDischargingCurren", "name": "Max Discharging Current", "unit": UnitOfElectricCurrent.AMPERE, "device_class": _DC.CURRENT, "state_class": _SC.MEASUREMENT, "diagnostic": True, "icon": "mdi:battery-arrow-down"},
+    # Diagnostic text sensors reporting the mode the device is actually in.
+    # These read the same snapshot fields as the select entities, so they are a
+    # quick way to see the raw label the API returned for a mode.
+    {"key": "workingMode", "name": "Working Mode", "text": True, "diagnostic": True, "icon": "mdi:state-machine"},
+    {"key": "chargerSourcePriority", "name": "Charger Priority (current)", "text": True, "diagnostic": True, "icon": "mdi:battery-sync", "candidates": STATE_KEY_CANDIDATES["chargerSourcePriority"]},
+    {"key": "outputSourcePriority", "name": "Output Priority (current)", "text": True, "diagnostic": True, "icon": "mdi:cog", "candidates": STATE_KEY_CANDIDATES["outputSourcePriority"]},
+    {"key": "chargingStatus", "name": "Charging Status", "text": True, "diagnostic": True, "icon": "mdi:battery-charging"},
+    {"key": "acChargingStatus", "name": "AC Charging Status", "text": True, "diagnostic": True, "icon": "mdi:transmission-tower-import"},
+    {"key": "sccChargingStatus", "name": "Solar Charging Status", "text": True, "diagnostic": True, "icon": "mdi:solar-power"},
+    # Read-only: the device reports its input voltage range but the portal
+    # exposes no write key for it, so this is a sensor rather than a switch.
+    {"key": "inputVoltageRange", "name": "Input Voltage Range", "text": True, "diagnostic": True, "icon": "mdi:sine-wave", "candidates": STATE_KEY_CANDIDATES["acInputRange"]},
+    {"key": "loadStatus", "name": "Load Status", "text": True, "diagnostic": True, "icon": "mdi:power-plug"},
+    {"key": "modelName", "name": "Model", "text": True, "diagnostic": True, "icon": "mdi:information-outline"},
+    {"key": "serialNumber", "name": "Serial Number", "text": True, "diagnostic": True, "icon": "mdi:identifier"},
+    {"key": "mainCpuFirmwareVersion", "name": "Firmware Version", "text": True, "diagnostic": True, "icon": "mdi:chip"},
+]
+
+# device_class → the unit family used to normalise a snapshot reading.
+_SCALE_KIND_BY_DEVICE_CLASS = {
+    _DC.POWER: "power",
+    _DC.ENERGY: "energy",
+}
+
+
+class SolarOfThingsStateSensor(CoordinatorEntity, SensorEntity):
+    """Sensor reading a single field from the state/latest endpoint."""
+
+    def __init__(self, coordinator, station_id, device_id, device_name, definition):
+        super().__init__(coordinator)
+        self._station_id = station_id
+        self._device_id = device_id
+        self._device_name = device_name
+        self._key = definition["key"]
+        self._candidates = definition.get("candidates") or [self._key]
+        self._is_text = definition.get("text", False)
+        self._scale_kind = _SCALE_KIND_BY_DEVICE_CLASS.get(definition.get("device_class"))
+        self._attr_has_entity_name = True
+        self._attr_name = definition["name"]
+        self._attr_unique_id = f"{DOMAIN}_{station_id}_{device_id}_state_{self._key}"
+        self._attr_icon = definition.get("icon")
+        if definition.get("diagnostic"):
+            self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        if not self._is_text:
+            self._attr_native_unit_of_measurement = definition.get("unit")
+            self._attr_device_class = definition.get("device_class")
+            self._attr_state_class = definition.get("state_class")
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, self._device_id)},
+            "name": self._device_name,
+            "manufacturer": "Siseli",
+            "via_device": (DOMAIN, self._station_id),
+        }
+
+    @property
+    def native_value(self):
+        # Candidate lookup is case-insensitive: the snapshot is inconsistent
+        # about capitalisation (PV1InputVoltage vs pv1InputCurrent) and some
+        # models publish a measurement under an alternative name entirely.
+        _key, entry = find_entry(
+            state_fields((self.coordinator.data or {}).get("state")), self._candidates
+        )
+        if entry is None:
+            return None
+
+        if self._is_text:
+            display = entry_display(entry)
+            value = display if display not in (None, "") else entry_value(entry)
+            return value if value not in (None, "") else None
+
+        number = to_float(entry_value(entry))
+        if number is None:
+            return None
+        return round(scale_value(number, entry_unit(entry), self._scale_kind), 2)
+
+
+class SolarOfThingsAlarmSensor(CoordinatorEntity, SensorEntity):
+    """Reports active (firing) device alarms; 'OK' when none."""
+
+    def __init__(self, coordinator, station_id, device_id, device_name):
+        super().__init__(coordinator)
+        self._station_id = station_id
+        self._device_id = device_id
+        self._device_name = device_name
+        self._attr_has_entity_name = True
+        self._attr_name = "Active Alarms"
+        self._attr_unique_id = f"{DOMAIN}_{station_id}_{device_id}_active_alarms"
+        self._attr_icon = "mdi:alert"
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, self._device_id)},
+            "name": self._device_name,
+            "manufacturer": "Siseli",
+            "via_device": (DOMAIN, self._station_id),
+        }
+
+    @property
+    def native_value(self):
+        alarms = ((self.coordinator.data or {}).get("state") or {}).get("firingAlarms") or []
+        names = [a.get("name") for a in alarms if isinstance(a, dict) and a.get("name")]
+        return ", ".join(names) if names else "OK"
+
+    @property
+    def extra_state_attributes(self):
+        alarms = ((self.coordinator.data or {}).get("state") or {}).get("firingAlarms") or []
+        return {
+            "count": len(alarms),
+            "alarms": [a.get("name") for a in alarms if isinstance(a, dict)],
+        }

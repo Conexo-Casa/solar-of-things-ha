@@ -7,6 +7,124 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.6.0] - 2026-08-07
+
+Rebuilt against captured live traffic from a PI30 / VMIII inverter on
+solar.siseli.com, which showed several of the API assumptions in earlier
+releases to be wrong.
+
+### Fixed
+- **Writes never reached the device.** The remote-config write body must be
+  `{"id": <deviceId>, "key": …, "value": …}`. Earlier releases sent `deviceId`
+  instead of `id`; the endpoint answers `code: 0` ("Success") and does nothing,
+  so every control appeared to work while changing nothing on the inverter.
+- **Writes used the wrong key names.** Reads and writes live in two different
+  name spaces: the live snapshot reports `outputSourcePriority` /
+  `chargerSourcePriority`, but the write endpoint expects
+  `settingDeviceOutputSourcePriority` / `settingDeviceChargerPriority`. Enum
+  values are sent as strings, as the portal sends them.
+- **Charger Source Priority had the wrong options.** It is the PI30 `PCP` code
+  with **four** values — 0 Utility First, 1 Solar First, 2 Solar + Utility,
+  3 Solar Only. The previous three-option CSO/SNU/OSO map matched neither what
+  the device reports nor what it accepts, so an inverter set to "Solar Only" (3)
+  could not be displayed at all.
+- **Grid Feed-in Power.** Off-grid models publish no feed-in measurement, only a
+  `solarFeedToGrid` permit flag. When feed-in is disabled the sensor now reports
+  0 W — true, and it makes the derived Grid Import figure correct — instead of
+  `unknown`.
+- **Telemetry attribute names** corrected to the ones the device actually
+  publishes: PV power is `generationPower` (kW), battery SOC is
+  `batteryCapacity`, and AC output power is reported in kW.
+- **"PV Generated" was mislabelled** — the device's own label for
+  `pvGeneratedEnergyOfDay` is "Total photovoltaic power generation". Renamed to
+  *PV Total Production*.
+
+### Removed
+- **Grid Charging (AC Input Range) switch.** The device reports
+  `inputVoltageRange` (Appliance / UPS) but the portal exposes no write key for
+  it, so the switch could not change anything. It is now the read-only
+  *Input Voltage Range* diagnostic sensor.
+- **Battery Charge Limit, Battery Discharge Limit and Grid Charge Limit.** No
+  such attributes exist on PI30/VMIII and there are no write keys for them —
+  the sliders were permanently unavailable and their writes went nowhere. The
+  current limits the device *does* report are exposed as diagnostic sensors.
+
+### Added
+- **Ten switches** for the settings the device genuinely accepts: Solar Feed to
+  Grid, Buzzer, Overload Bypass, Overload Restart, Over-temperature Restart,
+  LCD Backlight, LCD Return to Default Page, Fault Code Recording and Alarm on
+  Primary Source Interrupt, alongside Backup Mode.
+- **Three writable numbers**: battery equalization voltage, period and timeout.
+- **New sensors**: PV2 voltage/current/power, battery float and bulk voltage,
+  max charging / utility-charging / discharging current, AC and solar charging
+  status, input voltage range, model, serial number and firmware version.
+- `request_config_read()` / `fetch_config_read_details()` wrap the portal's
+  "Batch Read", which asks the inverter to report its stored configuration.
+
+### Changed
+- Control entities are now table-driven (`BOOLEAN_CONTROLS`, `NUMBER_CONTROLS`,
+  `SETTING_KEY_CANDIDATES`, `STATE_KEY_CANDIDATES` in `const.py`) — adding a
+  control is a table entry rather than a new entity class.
+- Tests cover the captured payload directly: the live snapshot resolves every
+  core measurement, and the write path is asserted byte-for-byte against what
+  the portal sends (52 tests, no Home Assistant install required).
+
+---
+
+## [2.5.0] - 2026-08-06
+
+### Fixed
+- **Charger Source Priority and Output Source Priority selects showed
+  `unknown`.** Both read their current value only from the remote-config cache
+  (`/apis/remote/device/configs/cache/get`), which holds just the keys that have
+  previously been *written* through the portal — on an account that has never
+  used remote control it comes back empty. They now read the live state snapshot
+  (`/apis/deviceState/simple/state/latest/v1`) first and fall back to the cache,
+  and they accept every value shape the API uses: an integer code, a numeric
+  string, an abbreviation (`"SBU"`) or a full label.
+- **Grid Feed-in Power showed `unknown`.** The history endpoint only returns the
+  attribute names it was asked for and that the model records, so models that
+  publish feed-in under another name returned nothing. Missing telemetry keys
+  are now filled from the state snapshot, with units normalised (kW → W), and
+  the derived values (`batteryPower`, `gridPower`, `loadPower`) are recomputed
+  afterwards so they benefit from the recovered readings.
+- **Number entities (charge/discharge/grid-charge limits) were unavailable.**
+  They returned the raw settings entry — a `{"key": …, "value": …}` dict —
+  instead of its value.
+- **Switches now read back from the live snapshot too**, and understand word
+  renderings (`"ON"`, `"Appliance"`) as well as integer codes.
+- **State sensors match attribute names case-insensitively**, fixing readings
+  lost to the snapshot's inconsistent capitalisation (`PV1InputVoltage` vs
+  `pv1InputCurrent`), and scale values using the unit the API reports.
+
+### Added
+- **Diagnostics support** — *Settings → Devices & Services → Solar of Things →
+  ⋮ → Download diagnostics* dumps the raw payloads with credentials, tokens and
+  the account ID redacted, including every attribute name the device publishes
+  and how each contested value resolved.
+- **`tools/dump_solar_api.py`** — standalone script that logs in and prints the
+  attribute names from all three endpoints, for capturing the same data outside
+  Home Assistant.
+- **[API_CAPTURE.md](API_CAPTURE.md)** — four ways to capture the data needed to
+  map an `unknown` entity, and how to add a new attribute name.
+- Priority selects expose `source`, `api_key`, `raw_value` and `raw_display` as
+  entity attributes, and log a warning (once per distinct value) when a value
+  cannot be mapped onto a known option.
+- Per-device attribute names are logged at debug level on the first poll.
+
+### Changed
+- All attribute names now live in candidate lists in `const.py`
+  (`STATE_KEY_CANDIDATES`, `SETTING_KEY_CANDIDATES`,
+  `TELEMETRY_STATE_FALLBACKS`), matched case-insensitively — supporting a new
+  inverter model is a one-line addition there.
+- The option ↔ integer maps are defined once in `const.py` and inverted for the
+  write path, so read-back and write cannot drift apart.
+- `tests/` runs without Home Assistant installed (36 new tests covering payload
+  shapes, unit scaling and option resolution); CI now fails on test failures
+  instead of tolerating them.
+
+---
+
 ## [2.4.2] - 2026-05-31
 
 ### Security / Quality
