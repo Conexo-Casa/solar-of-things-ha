@@ -90,15 +90,29 @@ from .const import (
     API_MONTHLY_SUMMARY,
     API_DEVICE_LIST,
     API_SETTINGS_GET,
+    API_SETTINGS_READ,
+    API_SETTINGS_READ_DETAILS,
     API_SETTINGS_SET,
+    BOOLEAN_CONTROLS,
     CHARGER_PRIORITY_BY_VALUE,
     IOT_APP_ID,
     IOT_APP_SECRET_ENC,
+    NUMBER_CONTROLS,
     OUTPUT_PRIORITY_BY_VALUE,
+    SETTING_KEY_CANDIDATES,
     TELEMETRY_STATE_FALLBACKS,
     TOKEN_REFRESH_LEAD_SECONDS,
 )
-from .helpers import state_fields, state_number
+from .const import STATE_KEY_CANDIDATES
+from .helpers import (
+    entry_display,
+    entry_value,
+    find_entry,
+    normalise_text,
+    state_fields,
+    state_number,
+    to_float,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -269,7 +283,29 @@ def merge_state_fallbacks(
                 key, value,
             )
 
+    # Off-grid models (PI30/VMIII) have no feed-in measurement at all — they
+    # report only whether feeding the grid is permitted.  When it is switched
+    # off, feed-in is definitively zero, which is both true and what the
+    # derived grid-power figure needs; guessing "unknown" would be worse.
+    if latest.get("feedInPower") in (None, ""):
+        _key, entry = find_entry(fields, STATE_KEY_CANDIDATES["gridFeedIn"])
+        if entry is not None and not _feed_in_enabled(entry):
+            latest["feedInPower"] = 0.0
+
     return compute_derived_values(latest)
+
+
+def _feed_in_enabled(entry: Any) -> bool:
+    """Return True unless the solar-feed-to-grid setting reads as disabled."""
+    number = to_float(entry_value(entry))
+    if number is not None:
+        return number != 0
+    return normalise_text(entry_display(entry) or entry_value(entry)) not in {
+        "disable",
+        "disabled",
+        "off",
+        "no",
+    }
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -660,13 +696,14 @@ class SolarOfThingsAPI:
 
         # Original keys + alternate attribute keys used by PI30 / VMIII
         # (Voltronic-style) inverters. Whichever the model exposes is used.
+        # Superset of the names seen across models — the endpoint simply omits
+        # the ones this device does not record.  Anything missing here is filled
+        # from the state snapshot afterwards (see merge_state_fallbacks).
         keys = [
             "pvInputPower", "generationPower", "PV1ChargingPower", "PV2ChargingPower",
             "acOutputActivePower",
             "batteryDischargeCurrent", "batteryChargingCurrent", "batteryVoltage",
             "batterySOC", "batteryCapacity", "batteryPercentage",
-            # Feed-in is named differently across models; request every variant
-            # we know of — the endpoint simply omits the ones it doesn't have.
             "feedInPower", "gridFeedInPower", "feedInActivePower", "onGridPower",
         ]
 
@@ -812,10 +849,16 @@ class SolarOfThingsAPI:
     # than in the JSON body.
 
     def _write_setting(self, device_id: str, key: str, value: Any) -> None:
-        """Write a single device setting key=value via the remote config write API."""
+        """Write a single device setting key=value via the remote config write API.
+
+        The body field is ``id``, not ``deviceId`` — captured from the portal's
+        own control panel.  Releases before 2.6.0 sent ``deviceId`` here, which
+        the endpoint accepts with a success code while changing nothing.
+        """
         self._ensure_token_valid()
         url = f"{API_BASE_URL}{API_SETTINGS_SET}?deviceId={device_id}"
-        payload = {"deviceId": device_id, "key": key, "value": value}
+        payload = {"id": device_id, "key": key, "value": value}
+        _LOGGER.debug("SolarOfThings: writing %s=%r to %s", key, value, device_id)
         resp = self.session.post(url, json=payload, timeout=30)
         resp.raise_for_status()
         data = resp.json()
@@ -852,12 +895,11 @@ class SolarOfThingsAPI:
         for key, value in settings.items():
             self._write_setting(device_id, key, value)
 
-    # ─── Convenience control helpers (called by select.py / switch.py) ─────────
-    # Key names are the real device attribute keys returned by get_device_settings.
-    # Output Source Priority:   USO=0, SUB=1, SBU=2
-    # Charger Source Priority:  CSO=0, SNU=1, OSO=2
-    # batteryPowerLimitingSetting: 0=OFF, 1=ON  (GRID switch)
-    # acInputRangeSetting:         0=Appliance, 1=UPS
+    # ─── Control helpers (called by select.py / switch.py / number.py) ────────
+    # Writes go to POST /apis/remote/device/config/write with the *setting* key
+    # names (settingDevice…), which differ from the state-snapshot names the
+    # entities read back from.  Enum values are sent as strings, matching what
+    # the portal's own control panel sends.
 
     # Option-string → integer maps, inverted from the single definition in
     # const.py so the write path and the select read-back cannot drift apart.
@@ -867,13 +909,24 @@ class SolarOfThingsAPI:
     _CHARGER_PRIORITY_REVERSE: dict[int, str] = CHARGER_PRIORITY_BY_VALUE
     _CHARGER_PRIORITY_MAP: dict[str, int] = {v: k for k, v in CHARGER_PRIORITY_BY_VALUE.items()}
 
+    def _write_control(self, device_id: str, control: str, value: Any) -> None:
+        """Write a logical control by its name in ``SETTING_KEY_CANDIDATES``.
+
+        The first candidate is the name this firmware family uses; the rest are
+        older names kept for models that still answer to them.
+        """
+        candidates = SETTING_KEY_CANDIDATES.get(control)
+        if not candidates:
+            raise ValueError(f"Unknown control {control!r}")
+        self._write_setting(device_id, candidates[0], value)
+
     def set_operating_mode(self, device_id: str, mode: str) -> None:
         """Set Output Source Priority.  mode is one of _OUTPUT_MODE_MAP keys."""
         value = self._OUTPUT_MODE_MAP.get(mode)
         if value is None:
             raise ValueError(f"Unknown operating mode: {mode!r}. "
                              f"Valid options: {list(self._OUTPUT_MODE_MAP)!r}")
-        self._write_setting(device_id, "outputSourcePrioritySetting", value)
+        self._write_control(device_id, "outputSourcePriority", str(value))
 
     def set_battery_priority(self, device_id: str, mode: str) -> None:
         """Set Charger Source Priority.  mode is one of _CHARGER_PRIORITY_MAP keys."""
@@ -881,33 +934,75 @@ class SolarOfThingsAPI:
         if value is None:
             raise ValueError(f"Unknown battery priority: {mode!r}. "
                              f"Valid options: {list(self._CHARGER_PRIORITY_MAP)!r}")
-        self._write_setting(device_id, "chargerSourcePrioritySetting", value)
+        self._write_control(device_id, "chargerSourcePriority", str(value))
 
-    def set_grid_charging(self, device_id: str, enabled: bool) -> None:
-        """Set AC Input Range: Appliance (0, grid charging allowed) / UPS (1, bypass)."""
-        self._write_setting(device_id, "acInputRangeSetting", 0 if enabled else 1)
+    def set_boolean_control(self, device_id: str, control: str, enabled: bool) -> None:
+        """Toggle one of the BOOLEAN_CONTROLS entries."""
+        spec = BOOLEAN_CONTROLS.get(control)
+        if spec is None:
+            raise ValueError(f"Unknown boolean control {control!r}")
+        self._write_control(device_id, control, spec["on_value"] if enabled else spec["off_value"])
+
+    def set_number_control(self, device_id: str, control: str, value: float) -> None:
+        """Write one of the NUMBER_CONTROLS entries.
+
+        Numeric settings are sent as numbers (the portal sends 120, 29.2 …);
+        anything else goes out as a string.
+        """
+        spec = NUMBER_CONTROLS.get(control)
+        if spec is None:
+            raise ValueError(f"Unknown number control {control!r}")
+        if spec.get("numeric", True):
+            payload_value: Any = int(value) if float(value).is_integer() else float(value)
+        else:
+            payload_value = str(value)
+        self._write_control(device_id, control, payload_value)
 
     def set_grid_feed_in(self, device_id: str, enabled: bool) -> None:
-        """Enable or disable the GRID grid switch (batteryPowerLimitingSetting)."""
-        self._write_setting(device_id, "batteryPowerLimitingSetting", 1 if enabled else 0)
+        """Enable or disable feeding solar back to the grid."""
+        self.set_boolean_control(device_id, "gridFeedIn", enabled)
 
     def set_backup_mode(self, device_id: str, enabled: bool) -> None:
         """Set Output Source Priority to SBU (backup/off-grid priority) when True,
         or SUB (solar-first, grid-supplemented) when False."""
-        value = 2 if enabled else 1   # SBU=2 (battery before grid), SUB=1
-        self._write_setting(device_id, "outputSourcePrioritySetting", value)
+        self.set_operating_mode(
+            device_id,
+            OUTPUT_PRIORITY_BY_VALUE[2] if enabled else OUTPUT_PRIORITY_BY_VALUE[1],
+        )
 
-    def set_battery_charge_limit(self, device_id: str, percent: int) -> None:
-        """Set battery charge limit (0–100 %)."""
-        self._write_setting(device_id, "batteryChargeLimit", percent)
+    def request_config_read(self, device_id: str) -> str | None:
+        """Ask the device to report its remote-config values (portal "Batch Read").
 
-    def set_battery_discharge_limit(self, device_id: str, percent: int) -> None:
-        """Set battery discharge limit / minimum SOC (0–100 %)."""
-        self._write_setting(device_id, "batteryDischargeLimit", percent)
+        Returns the batch id, which ``fetch_config_read_details`` can poll.  The
+        round-trip goes out to the inverter, so results appear seconds later —
+        the integration does not depend on it, since the live state snapshot
+        already carries every current value.
+        """
+        self._ensure_token_valid()
+        url = f"{API_BASE_URL}{API_SETTINGS_READ}?deviceId={device_id}"
+        resp = self.session.post(url, json={}, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("code") not in (0, None):
+            raise RuntimeError(
+                f"Config read request failed code={data.get('code')} "
+                f"message={data.get('message')}"
+            )
+        return (data.get("data") or {}).get("id")
 
-    def set_grid_charge_limit(self, device_id: str, watts: int) -> None:
-        """Set maximum grid charge power (0–5000 W)."""
-        self._write_setting(device_id, "gridChargeLimit", watts)
+    def fetch_config_read_details(self, batch_read_id: str) -> dict[str, Any]:
+        """Return the result of a ``request_config_read`` batch."""
+        self._ensure_token_valid()
+        url = f"{API_BASE_URL}{API_SETTINGS_READ_DETAILS}?batchReadId={batch_read_id}"
+        resp = self.session.get(url, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("code") not in (0, None):
+            raise RuntimeError(
+                f"Config read details failed code={data.get('code')} "
+                f"message={data.get('message')}"
+            )
+        return data.get("data") or {}
 
     def test_connection(self, station_id: str) -> bool:
         """Return True if we can reach the device-list endpoint successfully."""

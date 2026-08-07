@@ -103,12 +103,35 @@ your account. Only the response *body* is needed — never the request headers.
 
 ---
 
+## Two name spaces, one control
+
+The portal reads and writes the same setting under **different names**, which is
+worth knowing before you map anything:
+
+| Direction | Endpoint | Key style | Example |
+|---|---|---|---|
+| Read (live) | `GET /apis/deviceState/simple/state/latest/v1?deviceId=…&dataSource=1` | attribute | `chargerSourcePriority` |
+| Read (cache) | `POST /apis/remote/device/configs/cache/get?deviceId=…` | setting | `settingDeviceChargerPriority` |
+| Write | `POST /apis/remote/device/config/write?deviceId=…` | setting | `settingDeviceChargerPriority` |
+
+The write body is `{"id": "<deviceId>", "key": "<settingKey>", "value": "<value>"}`.
+The field is **`id`** — a body using `deviceId` still returns `code: 0`
+("Success") while changing nothing on the inverter.
+
+The cache is populated by the portal's **Batch Read** button, which is
+`POST /apis/remote/device/configs/read` followed by polling
+`GET /apis/remote/device/configs/read/details?batchReadId=…`. Until that
+round-trips to the device, the cache returns nulls — which is why the
+integration reads the live snapshot and treats the cache as a fallback.
+
 ## Adding a name once you have it
 
 Attribute names live in one place, `custom_components/solar_of_things/const.py`:
 
-- `STATE_KEY_CANDIDATES` — names in the live snapshot (selects, switches, numbers)
-- `SETTING_KEY_CANDIDATES` — names in the remote-config write cache
+- `STATE_KEY_CANDIDATES` — names in the live snapshot (what entities read)
+- `SETTING_KEY_CANDIDATES` — names the write endpoint accepts
+- `BOOLEAN_CONTROLS` / `NUMBER_CONTROLS` — the switches and numbers to create,
+  with their on/off values and ranges
 - `TELEMETRY_STATE_FALLBACKS` — names for the measurement sensors, with the unit
   family (`"power"` → normalised to W, `"energy"` → kWh, `None` → as-is)
 
