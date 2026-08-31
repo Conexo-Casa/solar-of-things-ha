@@ -282,8 +282,9 @@ class SolarOfThingsAPI:
                 "IOT-Time-Zone": self._time_zone,
                 "Origin": "https://solar.siseli.com",
                 "Referer": "https://solar.siseli.com/",
+                # Keep this version in sync with manifest.json on each release.
                 "User-Agent": (
-                    "HomeAssistant-SolarOfThings/2.3.0 "
+                    "HomeAssistant-SolarOfThings/2.4.3 "
                     "(+https://github.com/Conexo-Casa/solar-of-things-ha)"
                 ),
             }

@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.4.3] - 2026-08-31
+
+### Fixed
+- **Setup no longer implies the Station/Device ID must be exactly 18 digits.**
+  Users read the "18-digit number" wording in the config-flow dialog as a hard
+  requirement and concluded the integration was broken when their own value had a
+  different length. There has never been any length validation — `station_id` and
+  `device_id` are plain strings, and an ID of any length is accepted. The dialog
+  text, README, QUICKSTART and bug-report template now say "usually 18 digits".
+- **Added an explicit warning that the Station ID is not a serial number.** The
+  value must be the numeric `stationId` from the portal's API request payload
+  (DevTools → Network). The number printed on the inverter or WiFi dongle, and
+  plant/registration codes shown in the portal UI, are different identifiers and
+  will not work — this is the most common cause of the mix-up above.
+- **"More info" link in the IOT-token setup step pointed at an unrelated
+  project** (`Hyllesen/solar-of-things-solar-usage`). It now points here.
+- Normalised the remaining `conexocasa/` URLs to the canonical `Conexo-Casa/`
+  organisation, including the outbound `User-Agent`.
+- `User-Agent` version string was pinned at `2.3.0` and no longer matched the
+  shipped release; it now reports the correct version.
+
+### Notes
+- Documentation, wording and metadata only — no functional, entity or API
+  changes. Existing configured stations are unaffected and no re-setup is needed.
+- If your sensors are `unknown` or stuck at `0`, that is a separate, known issue
+  tracked in #7 (some inverters/dongles return live data from
+  `/energy/flow/v1` under different field keys) and is not addressed by this
+  release.
+
+---
+
 ## [2.4.2] - 2026-05-31
 
 ### Security / Quality
