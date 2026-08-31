@@ -47,6 +47,7 @@ from .const import (
     CONF_ACCESS_TOKEN_EXPIRES,
     CONF_REFRESH_TOKEN_EXPIRES,
 )
+from .util import normalise_config_fields
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -64,9 +65,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Solar of Things from a config entry."""
     hass.data.setdefault(DOMAIN, {})
 
-    time_zone = entry.data.get(CONF_TIME_ZONE) or entry.options.get(CONF_TIME_ZONE)
-    user_id = entry.data.get(CONF_USER_ID)
-    password = entry.data.get(CONF_PASSWORD)
+    # Also trim on read, so entries stored before the config flow started
+    # normalising are healed without the user having to set the station up
+    # again.  A single stray space in a pasted ID otherwise fails every request.
+    data = normalise_config_fields(entry.data)
+
+    time_zone = data.get(CONF_TIME_ZONE) or entry.options.get(CONF_TIME_ZONE)
+    user_id = data.get(CONF_USER_ID)
+    password = entry.data.get(CONF_PASSWORD)  # never trimmed
 
     # Build the token-refreshed callback *before* constructing the API so the
     # callback reference is captured.
@@ -105,10 +111,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         api = SolarOfThingsAPI(
             user_id=user_id,
             password=password,
-            iot_token=entry.data.get(CONF_IOT_TOKEN),          # cached token (avoids login on every restart)
-            refresh_token=entry.data.get(CONF_REFRESH_TOKEN),
-            access_token_expires=entry.data.get(CONF_ACCESS_TOKEN_EXPIRES),
-            refresh_token_expires=entry.data.get(CONF_REFRESH_TOKEN_EXPIRES),
+            iot_token=data.get(CONF_IOT_TOKEN),          # cached token (avoids login on every restart)
+            refresh_token=data.get(CONF_REFRESH_TOKEN),
+            access_token_expires=data.get(CONF_ACCESS_TOKEN_EXPIRES),
+            refresh_token_expires=data.get(CONF_REFRESH_TOKEN_EXPIRES),
             time_zone=time_zone,
             on_token_refreshed=_on_token_refreshed,
         )
@@ -118,13 +124,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     else:
         # Legacy IOT-token mode
         api = SolarOfThingsAPI(
-            iot_token=entry.data[CONF_IOT_TOKEN],
+            iot_token=data[CONF_IOT_TOKEN],
             time_zone=time_zone,
             on_token_refreshed=_on_token_refreshed,
         )
 
-    station_id = entry.data[CONF_STATION_ID]
-    configured_device_id = (entry.data.get(CONF_DEVICE_ID) or "").strip()
+    station_id = data[CONF_STATION_ID]
+    configured_device_id = data.get(CONF_DEVICE_ID) or ""
 
     # ── Station coordinator (device list + monthly) ────────────────────────────
     station_coordinator = SolarOfThingsStationCoordinator(

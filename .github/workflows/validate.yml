@@ -74,9 +74,9 @@ jobs:
       - name: Check Python syntax
         run: |
           cd custom_components/solar_of_things
-          python3 -m py_compile \
-            __init__.py api.py config_flow.py const.py \
-            sensor.py number.py select.py switch.py
+          # Glob rather than a hardcoded list: the explicit list silently went
+          # stale once already and skipped files that no longer existed.
+          python3 -m py_compile *.py
           echo "Python syntax OK"
 
       - name: Run unit tests (if present)

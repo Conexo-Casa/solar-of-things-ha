@@ -12,6 +12,22 @@ CONF_TIME_ZONE = "time_zone"
 CONF_USER_ID = "user_id"       # Siseli account / user-ID login (not email)
 CONF_PASSWORD = "password"
 
+# Fields that are typed or copy-pasted by hand and routinely arrive with stray
+# leading/trailing whitespace.  The upstream API treats " 4235…" as a different
+# (invalid) value, which surfaces to the user as an unhelpful "cannot connect".
+# Consumed by normalise_config_fields() in util.py, which is applied both when
+# the config flow accepts input and when an entry is read back at setup, so a
+# single list keeps the two paths from drifting.
+# CONF_PASSWORD is deliberately absent: whitespace in a password may be
+# significant, so it is never trimmed.
+WHITESPACE_SENSITIVE_FIELDS = (
+    CONF_USER_ID,
+    CONF_STATION_ID,
+    CONF_DEVICE_ID,
+    CONF_IOT_TOKEN,
+    CONF_TIME_ZONE,
+)
+
 # Runtime-stored token state (written back to config entry)
 CONF_REFRESH_TOKEN = "refresh_token"
 CONF_ACCESS_TOKEN_EXPIRES = "access_token_expires"   # ISO-8601 string
