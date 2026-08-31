@@ -44,6 +44,10 @@ API_MONTHLY_SUMMARY = "/apis/stationOverView/stateAttributeSummary/category/year
 API_SETTINGS_GET   = "/apis/remote/device/configs/cache/get"  # ?deviceId=<id>
 API_SETTINGS_SET   = "/apis/remote/device/config/write"       # ?deviceId=<id>
 API_DEVICE_LIST    = "/apis/device/list"
+# Live "energy flow" endpoint.  GET with ?deviceId=<id>&dataSource=1; values are
+# returned under data.deviceAttributeState.fields.  Used as a fallback when the
+# historical time-series endpoint yields nothing (see ENERGY_FLOW_RULES below).
+API_ENERGY_FLOW    = "/apis/deviceState/simple/energy/flow/v1"
 
 # ─── Token refresh window ──────────────────────────────────────────────────────
 # Refresh the access token this many seconds *before* its stated expiry.
@@ -63,6 +67,81 @@ SENSOR_KEYS = [
     "gridPower",
     "loadPower",
 ]
+
+# ─── Energy-flow fallback mapping ──────────────────────────────────────────────
+# Several inverter / WiFi-dongle firmware families never populate the historical
+# time-series endpoint (API_TIME_SERIES) that this integration reads by default,
+# so every realtime sensor stays "unknown" while the portal shows live data.
+# Reported for UWB1, RWB1-0x, JC-62xx, DatouBoss DT-series and EASUN units in
+# https://github.com/Conexo-Casa/solar-of-things-ha/issues/7 (and #3, #8, #11,
+# #14, #15).  Those devices serve live values from API_ENERGY_FLOW instead,
+# under a different set of field names.
+#
+# Each canonical sensor key maps to an ordered list of rules.  The first rule
+# that produces a usable number wins.  A rule is (mode, source_fields, scale):
+#   "first" – use the first source field that is present
+#   "sum"   – add every source field that is present (multi-string PV inputs)
+# `scale` converts the source value into the unit declared in
+# SENSOR_DEFINITIONS.
+#
+# Units for the per-field values below are taken from the sample payload in
+# issue #7 (bmsBatteryVoltage 26.6 V, batteryPercentage 100 %, batteryPower 9 W,
+# positiveTerminalBatteryCurrent 0.4 A, pv1Power/pv2Power in W).  The kW→W
+# scaling for the aggregate flow values (generationPower, load_power) matches
+# both the reporter's own reading of the portal and the pre-existing kW→W
+# normalisation this integration already applies to acOutputActivePower on the
+# time-series path — i.e. this portal reports aggregate power in kW.
+ENERGY_FLOW_RULES: dict[str, list[tuple[str, tuple[str, ...], float]]] = {
+    "pvInputPower": [
+        ("sum", ("pv1Power", "pv2Power", "pv3Power", "pv4Power"), 1.0),
+        ("first", ("generationPower",), 1000.0),
+    ],
+    "batteryVoltage": [
+        ("first", ("bmsBatteryVoltage", "positiveTerminalBatteryVoltage"), 1.0),
+    ],
+    "batterySOC": [
+        ("first", ("batteryPercentage", "bmsSOC"), 1.0),
+    ],
+    "batteryPower": [
+        ("first", ("batteryPower",), 1.0),
+    ],
+    "batteryDischargeCurrent": [
+        ("first", ("positiveTerminalBatteryCurrent",), 1.0),
+    ],
+    "batteryChargingCurrent": [
+        ("first", ("negativeTerminalBatteryCurrent",), 1.0),
+    ],
+    "loadPower": [
+        ("first", ("load_power", "loadPower"), 1000.0),
+    ],
+    "acOutputActivePower": [
+        ("first", ("load_power", "loadPower"), 1000.0),
+    ],
+}
+
+# Fields observed in the issue #7 payload that are deliberately NOT mapped yet.
+# Every sample value the reporter captured was zero (the reading was taken at
+# night), so the kW-vs-W scale cannot be pinned down.  Guessing wrong here would
+# push a value that is 1000x off into the HA Energy dashboard and long-term
+# statistics, which is materially worse than leaving the sensor "unknown".
+# Revisit once a daytime sample with non-zero values is available.
+ENERGY_FLOW_UNVERIFIED: tuple[str, ...] = (
+    "aPhaseMainsPower",   # candidate for gridPower (sum of the three phases)
+    "bPhaseMainsPower",
+    "cPhaseMainsPower",
+)
+
+# Canonical keys that indicate the time-series endpoint returned usable realtime
+# data.  If none of these are present the energy-flow fallback is attempted.
+REALTIME_PROBE_KEYS: tuple[str, ...] = (
+    "pvInputPower",
+    "acOutputActivePower",
+    "batteryVoltage",
+    "batterySOC",
+    "batteryChargingCurrent",
+    "batteryDischargeCurrent",
+    "feedInPower",
+)
 
 SENSOR_DEFINITIONS = {
     "pvInputPower": {
