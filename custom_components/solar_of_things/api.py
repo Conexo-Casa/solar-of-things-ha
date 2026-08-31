@@ -284,7 +284,7 @@ class SolarOfThingsAPI:
                 "Referer": "https://solar.siseli.com/",
                 "User-Agent": (
                     "HomeAssistant-SolarOfThings/2.3.0 "
-                    "(+https://github.com/conexocasa/solar-of-things-ha)"
+                    "(+https://github.com/Conexo-Casa/solar-of-things-ha)"
                 ),
             }
         )

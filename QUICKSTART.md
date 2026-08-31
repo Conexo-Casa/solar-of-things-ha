@@ -14,10 +14,17 @@ Get Solar of Things running in Home Assistant in under 5 minutes.
 1. Open [https://solar.siseli.com](https://solar.siseli.com) and log in.
 2. Press **F12** → **Network** tab → refresh the page (**Ctrl+R**).
 3. Click any request to `solar.siseli.com`.
-4. In the **Payload** tab, find `stationId` — it's an 18-digit number.
+4. In the **Payload** tab, find `stationId` — a long number, usually 18 digits.
 
-> Your **User ID** is your login account name (not an email address).
+> Your **User ID** is your login account name (not an email address, and not a number).
 > Your **Station ID** looks like `423564214316007425`.
+>
+> ⚠️ **The Station ID is not a serial number.** Do not use the number printed on
+> your inverter or WiFi dongle, and do not use a plant/registration code shown in
+> the portal UI — those are often a different length (20 digits or more) and will
+> not work. The only value that works is the `stationId` from the Network payload
+> shown above. Any length is accepted at setup; the integration does not require
+> exactly 18 digits.
 
 ---
 

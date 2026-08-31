@@ -10,7 +10,7 @@
       },
       "password": {
         "title": "Solar of Things — User ID + Password",
-        "description": "Enter your Siseli portal login credentials and Station ID.\n\n- **User ID**: your account/login name on https://solar.siseli.com\n- **Station ID**: 18-digit number found in API request payloads (DevTools → Network)\n- **Device ID**: optional — leave blank to auto-discover all devices under the station\n- **Time zone**: must match your inverter's configured time zone\n\nMore info: {docs_url}",
+        "description": "Enter your Siseli portal login credentials and Station ID.\n\n- **User ID**: your account/login name on https://solar.siseli.com (a name, not a number)\n- **Station ID**: the numeric `stationId` found in API request payloads (DevTools → Network). Usually 18 digits, but any length is accepted. This is **not** the serial number printed on your inverter or WiFi dongle.\n- **Device ID**: optional — leave blank to auto-discover all devices under the station\n- **Time zone**: must match your inverter's configured time zone\n\nMore info: {docs_url}",
         "data": {
           "user_id": "User ID / Account",
           "password": "Password",

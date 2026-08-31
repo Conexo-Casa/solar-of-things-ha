@@ -54,7 +54,8 @@ body:
   - type: input
     id: station_id
     attributes:
-      label: Station ID (18 digits, safe to share)
+      label: Station ID (safe to share)
+      description: "The numeric `stationId` from the portal Network payload — usually 18 digits. Not a serial number."
       placeholder: "423564214316007425"
     validations:
       required: false
@@ -62,7 +63,8 @@ body:
   - type: input
     id: device_id
     attributes:
-      label: Device ID (18 digits, safe to share)
+      label: Device ID (safe to share)
+      description: "The numeric `deviceId` from the portal Network payload — usually 18 digits. Not a serial number."
       placeholder: "423564214341173249"
     validations:
       required: false

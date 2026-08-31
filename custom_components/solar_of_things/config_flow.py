@@ -124,7 +124,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 }
             ),
             description_placeholders={
-                "docs_url": "https://github.com/conexocasa/solar-of-things-ha"
+                "docs_url": "https://github.com/Conexo-Casa/solar-of-things-ha"
             },
         )
 
@@ -173,7 +173,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             ),
             errors=errors,
             description_placeholders={
-                "docs_url": "https://github.com/conexocasa/solar-of-things-ha"
+                "docs_url": "https://github.com/Conexo-Casa/solar-of-things-ha"
             },
         )
 
@@ -208,7 +208,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             ),
             errors=errors,
             description_placeholders={
-                "docs_url": "https://github.com/Hyllesen/solar-of-things-solar-usage"
+                "docs_url": "https://github.com/Conexo-Casa/solar-of-things-ha"
             },
         )
 

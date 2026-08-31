@@ -138,7 +138,7 @@ The **Solar of Things** integration connects Home Assistant to the
 |---|---|
 | Home Assistant | **2023.6** or newer |
 | Siseli account | Active account at [solar.siseli.com](https://solar.siseli.com) |
-| Station ID | 18-digit ID from the Siseli portal |
+| Station ID | Numeric `stationId` from the Siseli portal (usually 18 digits) |
 | Network | HA must reach `https://solar.siseli.com` |
 
 ---
@@ -193,7 +193,7 @@ The **Solar of Things** integration connects Home Assistant to the
    |---|---|---|
    | **User ID** | ✅ | Your Siseli account login name |
    | **Password** | ✅ | Your Siseli account password |
-   | **Station ID** | ✅ | 18-digit Station ID |
+   | **Station ID** | ✅ | Numeric `stationId` (usually 18 digits) — **not** your inverter or WiFi-dongle serial number |
    | **Device ID** | Optional | Leave blank to auto-discover all devices |
    | **Time zone** | Optional | Default: `Asia/Manila` |
 
@@ -326,7 +326,7 @@ entities:
 | Symptom | Cause | Fix |
 |---|---|---|
 | "Cannot Connect" on setup | Wrong credentials or network | Check User ID / password and HA network access to solar.siseli.com |
-| No devices discovered | Wrong Station ID | Verify 18-digit stationId in the portal Network tab |
+| No devices discovered | Wrong Station ID | Re-read `stationId` from the portal Network tab. A serial number printed on the inverter or WiFi dongle is **not** the Station ID |
 | Entities show "Unavailable" | Token expired or portal unreachable | HA will prompt re-auth automatically; check logs |
 | Sensors always "Unknown" | API returns null for that field | Normal for sensors not supported by your inverter model |
 | Controls do nothing | Settings endpoint varies by firmware | Check HA logs for HTTP status codes |
