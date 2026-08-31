@@ -91,6 +91,9 @@ from .const import (
     API_DEVICE_LIST,
     API_SETTINGS_GET,
     API_SETTINGS_SET,
+    API_ENERGY_FLOW,
+    ENERGY_FLOW_RULES,
+    REALTIME_PROBE_KEYS,
     IOT_APP_ID,
     IOT_APP_SECRET_ENC,
     TOKEN_REFRESH_LEAD_SECONDS,
@@ -206,6 +209,88 @@ def _parse_expiry(value: str | None) -> datetime | None:
         return dt.astimezone(timezone.utc)
     except Exception:
         return None
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Energy-flow fallback mapping
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _coerce_number(value: Any) -> float | None:
+    """Best-effort conversion of an API field value to a float.
+
+    The energy-flow payload has only been observed second-hand (issue #7), so
+    accept every shape this portal is known to use elsewhere: a bare number, a
+    numeric string, a latest-wins list (as the time-series endpoint returns), or
+    a {"value": ...} wrapper.  Anything unrecognised yields None so the caller
+    leaves the sensor untouched instead of publishing a garbage reading.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            return float(text)
+        except ValueError:
+            return None
+    if isinstance(value, list):
+        for item in reversed(value):
+            number = _coerce_number(item)
+            if number is not None:
+                return number
+        return None
+    if isinstance(value, dict):
+        for key in ("value", "val", "latest"):
+            if key in value:
+                return _coerce_number(value[key])
+    return None
+
+
+def map_energy_flow_fields(fields: Any) -> dict[str, float]:
+    """Translate an energy-flow ``fields`` mapping into canonical sensor keys.
+
+    Pure function: no network access and no instance state, so it can be tested
+    directly.  Applies ENERGY_FLOW_RULES in declaration order and returns only
+    the keys it could actually resolve — the caller merges the result without
+    clobbering better data from the time-series endpoint.
+    """
+    if not isinstance(fields, dict) or not fields:
+        return {}
+
+    mapped: dict[str, float] = {}
+
+    for canonical, rules in ENERGY_FLOW_RULES.items():
+        for mode, sources, scale in rules:
+            if mode == "sum":
+                values = [
+                    number
+                    for source in sources
+                    if (number := _coerce_number(fields.get(source))) is not None
+                ]
+                if values:
+                    mapped[canonical] = sum(values) * scale
+            else:  # "first" — first present source field wins
+                for source in sources:
+                    number = _coerce_number(fields.get(source))
+                    if number is not None:
+                        mapped[canonical] = number * scale
+                        break
+            if canonical in mapped:
+                break
+
+    return mapped
+
+
+def has_realtime_values(values: Any) -> bool:
+    """Return True if any canonical realtime key carries a usable number."""
+    if not isinstance(values, dict):
+        return False
+    return any(
+        _coerce_number(values.get(key)) is not None for key in REALTIME_PROBE_KEYS
+    )
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -512,6 +597,28 @@ class SolarOfThingsAPI:
         resp.raise_for_status()
         return resp.json()
 
+    def _get(self, path: str, params: dict[str, Any], *, timeout: int = 30) -> dict[str, Any]:
+        """Perform a GET to a data endpoint, refreshing the token once on 401.
+
+        Mirrors _post's retry behaviour: on a second 401 the nested
+        _ensure_token_valid raises TokenExpiredError, which the coordinator
+        turns into a re-auth flow.
+        """
+        self._ensure_token_valid()
+
+        url = f"{API_BASE_URL}{path}"
+        resp = self.session.get(url, params=params, timeout=timeout)
+
+        if resp.status_code == 401:
+            _LOGGER.warning("SolarOfThings: received 401 on GET; forcing token refresh")
+            # Force an immediate refresh even if _token_needs_refresh() is False
+            self._access_expires = None
+            self._ensure_token_valid()
+            resp = self.session.get(url, params=params, timeout=timeout)
+
+        resp.raise_for_status()
+        return resp.json()
+
     # ─── Public properties (for persistence in HA config entry) ───────────────
 
     @property
@@ -591,7 +698,61 @@ class SolarOfThingsAPI:
     # ─── Time-series (per device) ──────────────────────────────────────────────
 
     def fetch_latest_data(self, device_id: str) -> dict[str, Any]:
-        """Fetch the latest readings for a device (last 1 hour)."""
+        """Fetch the latest readings for a device (last 1 hour).
+
+        The historical time-series endpoint is the primary source.  Several
+        inverter / WiFi-dongle firmware families never populate it, which leaves
+        every realtime entity "unknown" even though the portal shows live data
+        (issue #7).  For those devices we fall back to the live energy-flow
+        endpoint and translate its field names onto the canonical sensor keys.
+        """
+        latest_values = self._fetch_time_series_values(device_id)
+
+        if not has_realtime_values(latest_values):
+            _LOGGER.debug(
+                "SolarOfThings device %s: time-series returned no realtime "
+                "values; trying energy-flow fallback",
+                device_id,
+            )
+            try:
+                fields = self.fetch_energy_flow(device_id)
+            except TokenExpiredError:
+                # Must reach the coordinator so it can start the re-auth flow.
+                raise
+            except Exception as err:
+                _LOGGER.debug(
+                    "SolarOfThings device %s: energy-flow fallback unavailable: %s",
+                    device_id,
+                    err,
+                )
+            else:
+                mapped = map_energy_flow_fields(fields)
+                if mapped:
+                    _LOGGER.debug(
+                        "SolarOfThings device %s: energy-flow fallback resolved %s",
+                        device_id,
+                        sorted(mapped),
+                    )
+                    # Only fill gaps — never clobber a time-series reading.
+                    for key, value in mapped.items():
+                        latest_values.setdefault(key, value)
+                elif fields:
+                    # Unknown firmware variant: surface the field names so they
+                    # can be added to ENERGY_FLOW_RULES from a bug report.
+                    _LOGGER.warning(
+                        "SolarOfThings device %s: energy-flow returned %d field(s) "
+                        "but none matched a known mapping. Please open an issue "
+                        "with these key names: %s",
+                        device_id,
+                        len(fields),
+                        sorted(fields),
+                    )
+
+        self._apply_derived_values(latest_values)
+        return latest_values
+
+    def _fetch_time_series_values(self, device_id: str) -> dict[str, Any]:
+        """Return the latest value per key from the historical time-series API."""
         end_time = self._now()
         start_time = end_time - timedelta(hours=1)
 
@@ -634,28 +795,62 @@ class SolarOfThingsAPI:
 
         # Unit normalisation: acOutputActivePower is kW in API → W
         if "acOutputActivePower" in latest_values:
-            try:
-                latest_values["acOutputActivePower"] = (
-                    float(latest_values["acOutputActivePower"]) * 1000.0
-                )
-            except Exception:
-                pass
-
-        # Derived values
-        voltage = float(latest_values.get("batteryVoltage") or 0)
-        discharge = float(latest_values.get("batteryDischargeCurrent") or 0)
-        charge = float(latest_values.get("batteryChargingCurrent") or 0)
-        latest_values["batteryPower"] = (discharge - charge) * voltage
-
-        pv_power = float(latest_values.get("pvInputPower") or 0)
-        ac_output = float(latest_values.get("acOutputActivePower") or 0)
-        feed_in = float(latest_values.get("feedInPower") or 0)
-        battery_power = float(latest_values.get("batteryPower") or 0)
-
-        latest_values["gridPower"] = max(0.0, ac_output - pv_power + battery_power + feed_in)
-        latest_values["loadPower"] = ac_output
+            converted = _coerce_number(latest_values["acOutputActivePower"])
+            if converted is not None:
+                latest_values["acOutputActivePower"] = converted * 1000.0
 
         return latest_values
+
+    def fetch_energy_flow(self, device_id: str) -> dict[str, Any]:
+        """Return the live energy-flow ``fields`` mapping for a device.
+
+        Fallback source for firmware that never populates the time-series
+        endpoint (issue #7).  Returns an empty dict when the endpoint responds
+        without field data, so "no data" and "unsupported" behave identically.
+        """
+        data = self._get(API_ENERGY_FLOW, {"deviceId": device_id, "dataSource": 1})
+
+        if data.get("code") not in (0, None, "0"):
+            raise RuntimeError(
+                f"Energy-flow error code={data.get('code')} "
+                f"message={data.get('message') or data.get('msg')}"
+            )
+
+        payload = data.get("data") or {}
+        state = payload.get("deviceAttributeState") or {}
+        fields = state.get("fields")
+        if not isinstance(fields, dict):
+            # Tolerate the values being nested directly under data.fields.
+            fields = payload.get("fields")
+        return fields if isinstance(fields, dict) else {}
+
+    @staticmethod
+    def _apply_derived_values(latest_values: dict[str, Any]) -> None:
+        """Compute values the API does not report directly.
+
+        Gap-filling only: when a source such as the energy-flow fallback already
+        supplied a real measurement, it is kept rather than overwritten with an
+        estimate.  On the time-series path none of these keys are ever returned
+        by the API, so every one of them is still derived exactly as before.
+        """
+        if latest_values.get("batteryPower") is None:
+            voltage = _coerce_number(latest_values.get("batteryVoltage")) or 0.0
+            discharge = _coerce_number(latest_values.get("batteryDischargeCurrent")) or 0.0
+            charge = _coerce_number(latest_values.get("batteryChargingCurrent")) or 0.0
+            latest_values["batteryPower"] = (discharge - charge) * voltage
+
+        ac_output = _coerce_number(latest_values.get("acOutputActivePower")) or 0.0
+
+        if latest_values.get("loadPower") is None:
+            latest_values["loadPower"] = ac_output
+
+        if latest_values.get("gridPower") is None:
+            pv_power = _coerce_number(latest_values.get("pvInputPower")) or 0.0
+            feed_in = _coerce_number(latest_values.get("feedInPower")) or 0.0
+            battery_power = _coerce_number(latest_values.get("batteryPower")) or 0.0
+            latest_values["gridPower"] = max(
+                0.0, ac_output - pv_power + battery_power + feed_in
+            )
 
     # ─── Monthly summary (station) ─────────────────────────────────────────────
 
