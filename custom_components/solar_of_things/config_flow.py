@@ -36,6 +36,7 @@ from .const import (
     CONF_ACCESS_TOKEN_EXPIRES,
     CONF_REFRESH_TOKEN_EXPIRES,
 )
+from .util import normalise_config_fields
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -135,6 +136,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
+            # Trim before validating *and* before storing, so the value that is
+            # checked is the same one that gets persisted.
+            user_input = normalise_config_fields(user_input)
             try:
                 info = await _validate_password_auth(self.hass, user_input)
             except InvalidAuth:
@@ -184,6 +188,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
+            # The entry is created from this same dict, so trim it up front.
+            user_input = normalise_config_fields(user_input)
             try:
                 info = await _validate_token_auth(self.hass, user_input)
             except CannotConnect:
@@ -233,9 +239,16 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
         if user_input is not None:
+            # Matters most for the token path: a freshly pasted IOT token is the
+            # single most whitespace-prone value in this integration.
+            user_input = normalise_config_fields(user_input)
             if has_password:
                 # Re-authenticate with potentially updated email/password
-                merged = {**(existing_entry.data if existing_entry else {}), **user_input}
+                # Normalise the merge, not just user_input: the station/device
+                # IDs come from the stored entry, which may pre-date trimming.
+                merged = normalise_config_fields(
+                    {**(existing_entry.data if existing_entry else {}), **user_input}
+                )
                 try:
                     info = await _validate_password_auth(self.hass, merged)
                 except InvalidAuth:
@@ -261,7 +274,11 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     return self.async_abort(reason="reauth_successful")
             else:
                 # Legacy token mode: user provides a fresh token
-                merged = {**(existing_entry.data if existing_entry else {}), **user_input}
+                # Normalise the merge, not just user_input: the station/device
+                # IDs come from the stored entry, which may pre-date trimming.
+                merged = normalise_config_fields(
+                    {**(existing_entry.data if existing_entry else {}), **user_input}
+                )
                 try:
                     await _validate_token_auth(self.hass, merged)
                 except CannotConnect:

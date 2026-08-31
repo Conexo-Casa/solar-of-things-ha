@@ -1,11 +1,10 @@
 name: "Solar of Things CodeQL config"
 
-# Only scan the actual integration code — ignore dist/ and any future test fixtures
+# Only scan the actual integration code — ignore tests and any future fixtures
 paths:
   - custom_components/solar_of_things
 
 paths-ignore:
-  - dist/
   - tests/
   - "**/*.md"
 
