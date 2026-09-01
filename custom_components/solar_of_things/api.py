@@ -595,28 +595,41 @@ class SolarOfThingsAPI:
         end_time = self._now()
         start_time = end_time - timedelta(hours=1)
 
+        # Some inverter models (e.g. Siseli HPVINV02 / "Inverter Top One"
+        # gather protocol) report these three metrics under different key
+        # names than the vendor's documented API. Request both the
+        # documented key and the known alternate, and prefer whichever the
+        # device actually populates — keeps this working for devices that
+        # use either naming instead of hardcoding one over the other.
+        ALIAS_GROUPS = [
+            ("pvInputPower", "pvPower"),
+            ("acOutputActivePower", "outputActivePower"),
+            ("batterySOC", "batteryCapacity"),
+        ]
+
         keys = [
             "pvInputPower",
+            "pvPower",
             "acOutputActivePower",
+            "outputActivePower",
             "batteryDischargeCurrent",
             "batteryChargingCurrent",
             "batteryVoltage",
             "feedInPower",
             "batterySOC",
+            "batteryCapacity",
         ]
 
-        data = self._post(
-            API_TIME_SERIES,
-            {
-                "deviceId": device_id,
-                "count": 2000,
-                "page": 1,
-                "fromTime": self._format_time(start_time),
-                "toTime": self._format_time(end_time),
-                "orderByTimeAsc": True,
-                "keys": keys,
-            },
-        )
+        request_body = {
+            "deviceId": device_id,
+            "count": 2000,
+            "page": 1,
+            "fromTime": self._format_time(start_time),
+            "toTime": self._format_time(end_time),
+            "orderByTimeAsc": True,
+            "keys": keys,
+        }
+        data = self._post(API_TIME_SERIES, request_body)
 
         if data.get("code") not in (0, None):
             raise RuntimeError(
@@ -632,14 +645,18 @@ class SolarOfThingsAPI:
             if isinstance(arr, list) and arr:
                 latest_values[key] = arr[-1]
 
-        # Unit normalisation: acOutputActivePower is kW in API → W
-        if "acOutputActivePower" in latest_values:
-            try:
-                latest_values["acOutputActivePower"] = (
-                    float(latest_values["acOutputActivePower"]) * 1000.0
-                )
-            except Exception:
-                pass
+        for canonical, alternate in ALIAS_GROUPS:
+            if latest_values.get(canonical) is None and latest_values.get(alternate) is not None:
+                latest_values[canonical] = latest_values[alternate]
+            latest_values.pop(alternate, None)
+
+        # Unit normalisation: acOutputActivePower and pvInputPower are kW in API → W
+        for _power_key in ("acOutputActivePower", "pvInputPower"):
+            if _power_key in latest_values:
+                try:
+                    latest_values[_power_key] = float(latest_values[_power_key]) * 1000.0
+                except Exception:
+                    pass
 
         # Derived values
         voltage = float(latest_values.get("batteryVoltage") or 0)
