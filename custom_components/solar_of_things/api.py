@@ -369,7 +369,7 @@ class SolarOfThingsAPI:
                 "Referer": "https://solar.siseli.com/",
                 # Keep this version in sync with manifest.json on each release.
                 "User-Agent": (
-                    "HomeAssistant-SolarOfThings/2.4.3 "
+                    "HomeAssistant-SolarOfThings/2.5.0 "
                     "(+https://github.com/Conexo-Casa/solar-of-things-ha)"
                 ),
             }
