@@ -100,17 +100,21 @@ SENSOR_KEYS = [
 # `scale` converts the source value into the unit declared in
 # SENSOR_DEFINITIONS.
 #
-# Units for the per-field values below are taken from the sample payload in
-# issue #7 (bmsBatteryVoltage 26.6 V, batteryPercentage 100 %, batteryPower 9 W,
-# positiveTerminalBatteryCurrent 0.4 A, pv1Power/pv2Power in W).  The kW→W
-# scaling for the aggregate flow values (generationPower, load_power) matches
-# both the reporter's own reading of the portal and the pre-existing kW→W
-# normalisation this integration already applies to acOutputActivePower on the
-# time-series path — i.e. this portal reports aggregate power in kW.
+# ONLY mappings whose unit is confirmed by a NON-ZERO observed value are enabled
+# here.  Every rule below has scale 1.0 — the value is published exactly as the
+# portal reports it — so no rule in this table can be 1000x wrong.  The issue #7
+# payload was captured at night, so it pinned down the units of only these
+# fields:
+#   bmsBatteryVoltage / positiveTerminalBatteryVoltage   26.6 V
+#   batteryPercentage / bmsSOC                           100 %
+#   batteryPower                                         9 W
+#   pv1Power / pv2Power                                  W (labelled; 0 at night)
+# Anything that would need a kW→W conversion, or whose direction/sign is
+# ambiguous, is listed in ENERGY_FLOW_UNVERIFIED below and left unmapped until a
+# daytime, under-load capture confirms it.
 ENERGY_FLOW_RULES: dict[str, list[tuple[str, tuple[str, ...], float]]] = {
     "pvInputPower": [
         ("sum", ("pv1Power", "pv2Power", "pv3Power", "pv4Power"), 1.0),
-        ("first", ("generationPower",), 1000.0),
     ],
     "batteryVoltage": [
         ("first", ("bmsBatteryVoltage", "positiveTerminalBatteryVoltage"), 1.0),
@@ -121,30 +125,38 @@ ENERGY_FLOW_RULES: dict[str, list[tuple[str, tuple[str, ...], float]]] = {
     "batteryPower": [
         ("first", ("batteryPower",), 1.0),
     ],
-    "batteryDischargeCurrent": [
-        ("first", ("positiveTerminalBatteryCurrent",), 1.0),
-    ],
-    "batteryChargingCurrent": [
-        ("first", ("negativeTerminalBatteryCurrent",), 1.0),
-    ],
-    "loadPower": [
-        ("first", ("load_power", "loadPower"), 1000.0),
-    ],
-    "acOutputActivePower": [
-        ("first", ("load_power", "loadPower"), 1000.0),
-    ],
 }
 
-# Fields observed in the issue #7 payload that are deliberately NOT mapped yet.
-# Every sample value the reporter captured was zero (the reading was taken at
-# night), so the kW-vs-W scale cannot be pinned down.  Guessing wrong here would
-# push a value that is 1000x off into the HA Energy dashboard and long-term
-# statistics, which is materially worse than leaving the sensor "unknown".
-# Revisit once a daytime sample with non-zero values is available.
+# Fields observed in the issue #7 payload that are deliberately NOT mapped.
+# Publishing a wrong value is worse than leaving a sensor "unknown": a 1000x
+# scaling error feeds the HA Energy dashboard and long-term statistics, and
+# statistics cannot be un-poisoned by a later fix.  Two distinct reasons:
+#
+# 1. UNIT UNCONFIRMED (kW vs W).  Every captured sample was zero because the
+#    reading was taken at night, so the scale cannot be pinned down.  The
+#    reporter labelled these kW, and this integration already applies kW→W to
+#    acOutputActivePower on the time-series path, so x1000 is *probably* right —
+#    but "probably" is not good enough for a value that lands in statistics.
+# 2. DIRECTION UNCONFIRMED.  The battery terminal currents carry the right
+#    magnitude (26.6 V x 0.4 A ~= 9 W, matching the reported batteryPower), but
+#    which terminal means charge and which means discharge is unverified — the
+#    reporter flagged it, and a swap would invert charge/discharge, which is
+#    actively misleading rather than merely absent.
+#
+# Revisit once two captures from issue #7 are available: one in daylight under
+# load (settles the units), one while the battery is actively charging (settles
+# the direction).
 ENERGY_FLOW_UNVERIFIED: tuple[str, ...] = (
+    # 1. unit unconfirmed (kW vs W)
     "aPhaseMainsPower",   # candidate for gridPower (sum of the three phases)
     "bPhaseMainsPower",
     "cPhaseMainsPower",
+    "generationPower",    # candidate aggregate fallback for pvInputPower
+    "load_power",         # candidate for loadPower / acOutputActivePower
+    "loadPower",
+    # 2. direction unconfirmed (which terminal is charge vs discharge)
+    "positiveTerminalBatteryCurrent",
+    "negativeTerminalBatteryCurrent",
 )
 
 # Canonical keys that indicate the time-series endpoint returned usable realtime

@@ -17,6 +17,7 @@ from custom_components.solar_of_things.api import (
     has_realtime_values,
     map_energy_flow_fields,
 )
+from custom_components.solar_of_things.const import ENERGY_FLOW_UNVERIFIED
 
 # Exactly the fields reported in issue #7 (UWB1 inverter, night-time reading).
 ISSUE_7_NIGHT_PAYLOAD = {
@@ -42,42 +43,64 @@ def test_issue_7_payload_maps_to_canonical_keys() -> None:
     """The reported payload must populate the previously-unknown sensors."""
     mapped = map_energy_flow_fields(ISSUE_7_NIGHT_PAYLOAD)
 
+    # Units confirmed by a non-zero observed value in the report — publishable.
     assert mapped["pvInputPower"] == 0.0
     assert mapped["batteryVoltage"] == 26.6
     assert mapped["batterySOC"] == 100.0
     assert mapped["batteryPower"] == 9.0
-    assert mapped["batteryDischargeCurrent"] == 0.4
-    assert mapped["batteryChargingCurrent"] == 0.0
-    assert mapped["loadPower"] == 0.0
-    assert mapped["acOutputActivePower"] == 0.0
+
+    # Unit or direction unconfirmed — must stay ABSENT rather than publish a
+    # possibly-wrong value. See ENERGY_FLOW_UNVERIFIED in const.py.
+    for unconfirmed in (
+        "loadPower",
+        "acOutputActivePower",
+        "batteryChargingCurrent",
+        "batteryDischargeCurrent",
+    ):
+        assert unconfirmed not in mapped, unconfirmed
 
 
-def test_mains_power_fields_are_not_mapped() -> None:
-    """Unit for the per-phase mains fields is unconfirmed, so stay out.
+def test_unverified_fields_are_never_mapped() -> None:
+    """No field in ENERGY_FLOW_UNVERIFIED may produce a sensor value.
 
-    Publishing a possibly-1000x-wrong value into the Energy dashboard is worse
-    than leaving the sensor unknown. See ENERGY_FLOW_UNVERIFIED in const.py.
+    A 1000x-wrong power value feeds the HA Energy dashboard and long-term
+    statistics, which a later fix cannot un-poison; an inverted charge/discharge
+    current is actively misleading. Both are worse than an unknown sensor.
+
+    This is the guard that stops a well-meaning change from re-enabling one of
+    these before a confirming capture exists.
     """
-    mapped = map_energy_flow_fields(
-        {"aPhaseMainsPower": 500, "bPhaseMainsPower": 0, "cPhaseMainsPower": 0}
-    )
-    assert mapped == {}
+    for field in ENERGY_FLOW_UNVERIFIED:
+        assert map_energy_flow_fields({field: 500}) == {}, field
+
+    # And as a group, mirroring the shape of a real payload.
+    assert map_energy_flow_fields({f: 500 for f in ENERGY_FLOW_UNVERIFIED}) == {}
 
 
-def test_multi_string_pv_is_summed_and_kw_is_scaled() -> None:
+def test_multi_string_pv_is_summed_at_face_value() -> None:
+    """Per-string PV inputs are reported in W and summed without scaling."""
     mapped = map_energy_flow_fields(
         {"pv1Power": 1200, "pv2Power": 800, "load_power": 1.5}
     )
     assert mapped["pvInputPower"] == 2000.0
-    assert mapped["loadPower"] == 1500.0  # kW → W
+    # load_power would need an unconfirmed kW→W conversion, so it stays out.
+    assert "loadPower" not in mapped
 
 
-def test_generation_power_is_only_a_pv_fallback() -> None:
-    """generationPower (kW) is used only when no per-string field exists."""
-    assert map_energy_flow_fields({"generationPower": 2.4})["pvInputPower"] == 2400.0
-    # A per-string reading always wins over the aggregate.
-    both = {"pv1Power": 500, "generationPower": 2.4}
-    assert map_energy_flow_fields(both)["pvInputPower"] == 500.0
+def test_generation_power_is_not_used_as_a_pv_fallback() -> None:
+    """generationPower is an aggregate in kW and its x1000 is unconfirmed.
+
+    Excluding it means a device reporting ONLY generationPower gets an unknown
+    PV sensor rather than one that may be 1000x wrong.
+    """
+    assert map_energy_flow_fields({"generationPower": 2.4}) == {}
+    # A per-string reading is still mapped when one is present.
+    assert (
+        map_energy_flow_fields({"pv1Power": 500, "generationPower": 2.4})[
+            "pvInputPower"
+        ]
+        == 500.0
+    )
 
 
 @pytest.mark.parametrize(
@@ -181,13 +204,16 @@ def test_fallback_populates_sensors_when_time_series_is_empty(api_factory) -> No
     assert calls["energy_flow"] == 1
     assert result["batteryVoltage"] == 26.6
     assert result["batterySOC"] == 100.0
-    assert result["batteryDischargeCurrent"] == 0.4
+    assert result["batteryPower"] == 9.0
 
 
 def test_measured_battery_power_is_not_overwritten_by_the_estimate(api_factory) -> None:
     """The flow endpoint reports batteryPower directly; keep it.
 
-    The derived estimate would give (0.4 - 0) * 26.6 = 10.64 W here.
+    The terminal currents are no longer mapped from flow data (direction
+    unconfirmed), so no voltage x current estimate can be derived from this
+    payload at all — but the no-clobber precedence must still hold for devices
+    that get their currents from the time-series path.
     """
     api, _ = api_factory({}, flow_fields=ISSUE_7_NIGHT_PAYLOAD)
     assert api.fetch_latest_data("device-3")["batteryPower"] == 9.0

@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.5.0] - 2026-09-11
+
+### Added
+- **Realtime sensors now populate on inverters that never fill the historical
+  time-series endpoint.** Several firmware families (UWB1, RWB1-0x, JC-62xx,
+  DatouBoss DT-series, EASUN) left every realtime entity `unknown` while the
+  portal showed live data — the shared cause behind #3, #7, #8, #11, #14 and
+  #15. Those devices serve live values from
+  `/apis/deviceState/simple/energy/flow/v1` under a different set of field
+  names, and the integration now falls back to that endpoint and maps them.
+
+  Populated by the fallback: **PV Input Power** (per-string `pv1Power`…`pv4Power`,
+  summed), **Battery Voltage**, **Battery State of Charge**, **Battery Power**.
+
+  Thanks to @jazuch for a report that included the endpoint, the data path, the
+  field names and sample values, and to @hidemichixt-creator for confirming the
+  fix against real hardware.
+
+### Changed
+- Derived values (battery / grid / load power) now **fill gaps rather than
+  overwrite**, so a directly measured reading is preferred over the
+  `voltage x current` estimate.
+
+### Notes
+- **The fallback is gated.** It runs only when the time-series endpoint yields
+  no realtime value, so a working installation makes zero extra API calls and
+  its readings are unchanged — pinned by a regression test.
+- **Deliberately not mapped yet.** Publishing a wrong value is worse than an
+  unknown sensor: a 1000x scaling error feeds the Energy dashboard and
+  long-term statistics, which a later fix cannot un-poison.
+  - `generationPower`, `load_power` / `loadPower`, and the per-phase
+    `aPhaseMainsPower` / `bPhaseMainsPower` / `cPhaseMainsPower` — every
+    captured sample was zero (night-time reading), so kW-vs-W is unconfirmed.
+  - `positiveTerminalBatteryCurrent` / `negativeTerminalBatteryCurrent` — the
+    magnitude is correct, but which terminal means charge and which means
+    discharge is unverified, and a swap would invert the two.
+
+  Load Power and Grid Import Power therefore keep their existing derived
+  estimates. See `ENERGY_FLOW_UNVERIFIED` in `const.py`; tracked in #7.
+- If your inverter reports fields this release does not recognise, the log now
+  emits a warning listing the exact key names — please open an issue with them.
+
+---
+
 ## [2.4.3] - 2026-08-31
 
 ### Fixed
