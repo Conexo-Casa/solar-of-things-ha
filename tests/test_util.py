@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from custom_components.solar_of_things.const import WHITESPACE_SENSITIVE_FIELDS
-from custom_components.solar_of_things.util import normalise_config_fields
+from custom_components.solar_of_things.util import is_valid_time_zone, normalise_config_fields
 
 
 def test_trims_pasted_station_and_device_ids() -> None:
@@ -70,3 +70,26 @@ def test_returns_a_copy_without_mutating_the_input() -> None:
 )
 def test_edge_cases(payload, expected) -> None:
     assert normalise_config_fields(payload) == expected
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["Asia/Manila", "Europe/Warsaw", "America/New_York", "UTC"],
+)
+def test_valid_iana_zone_ids(value) -> None:
+    assert is_valid_time_zone(value) is True
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "Europe",  # issue #21 — a continent, not a zone
+        "America",
+        "GMT+2",
+        "PST",
+        "",
+        None,
+    ],
+)
+def test_rejects_non_iana_values(value) -> None:
+    assert is_valid_time_zone(value) is False
