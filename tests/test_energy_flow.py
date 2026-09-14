@@ -197,6 +197,58 @@ def test_working_device_is_unaffected(api_factory) -> None:
     assert calls["energy_flow"] == 0
 
 
+def test_hpvinv02_alternate_key_names_are_mapped_to_canonical(api_factory) -> None:
+    """Siseli HPVINV02 ("Inverter Top One" gather protocol) reports PV/AC/SOC
+    under pvPower / outputActivePower / batteryCapacity instead of the
+    documented pvInputPower / acOutputActivePower / batterySOC — these stayed
+    "unknown" forever until the alias mapping was added.
+    """
+    history = {
+        "pvPower": [1.5],
+        "outputActivePower": [1.1],
+        "batteryCapacity": [77],
+        "batteryVoltage": [52.0],
+        "batteryDischargeCurrent": [2.0],
+        "batteryChargingCurrent": [0.0],
+        "feedInPower": [0],
+    }
+    api, calls = api_factory(history, flow_fields={"bmsSOC": 1})
+    result = api.fetch_latest_data("device-hpvinv02")
+
+    assert result["pvInputPower"] == 1500.0        # kW → W, via the alias
+    assert result["acOutputActivePower"] == 1100.0  # kW → W, via the alias
+    assert result["batterySOC"] == 77
+    # The alternate keys must not leak into the published values.
+    assert "pvPower" not in result
+    assert "outputActivePower" not in result
+    assert "batteryCapacity" not in result
+    # Derived values still come from the shared _apply_derived_values path.
+    assert result["batteryPower"] == 104.0          # (2.0 - 0.0) * 52.0
+    assert result["loadPower"] == 1100.0
+    assert calls["energy_flow"] == 0
+
+
+def test_documented_keys_win_when_a_device_reports_both(api_factory) -> None:
+    """A device that already uses the documented key names must be unaffected
+    by the alias — the canonical value always wins, the alias is discarded,
+    and (critically) pvInputPower is NOT kW->W converted on this path: it's
+    already W for every device this integration supported before HPVINV02,
+    and converting it unconditionally regressed test_working_device_is_unaffected.
+    """
+    history = {
+        "pvInputPower": [2.0],
+        "pvPower": [999],
+        "acOutputActivePower": [1.0],
+        "batterySOC": [55],
+        "batteryCapacity": [10],
+    }
+    api, _ = api_factory(history, flow_fields={})
+    result = api.fetch_latest_data("device-both-keys")
+
+    assert result["pvInputPower"] == 2.0
+    assert result["batterySOC"] == 55
+
+
 def test_fallback_populates_sensors_when_time_series_is_empty(api_factory) -> None:
     api, calls = api_factory({}, flow_fields=ISSUE_7_NIGHT_PAYLOAD)
     result = api.fetch_latest_data("device-2")

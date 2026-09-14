@@ -756,28 +756,41 @@ class SolarOfThingsAPI:
         end_time = self._now()
         start_time = end_time - timedelta(hours=1)
 
+        # Some inverter models (e.g. Siseli HPVINV02 / "Inverter Top One"
+        # gather protocol) report these three metrics under different key
+        # names than the vendor's documented API. Request both the
+        # documented key and the known alternate, and prefer whichever the
+        # device actually populates — keeps this working for devices that
+        # use either naming instead of hardcoding one over the other.
+        ALIAS_GROUPS = [
+            ("pvInputPower", "pvPower"),
+            ("acOutputActivePower", "outputActivePower"),
+            ("batterySOC", "batteryCapacity"),
+        ]
+
         keys = [
             "pvInputPower",
+            "pvPower",
             "acOutputActivePower",
+            "outputActivePower",
             "batteryDischargeCurrent",
             "batteryChargingCurrent",
             "batteryVoltage",
             "feedInPower",
             "batterySOC",
+            "batteryCapacity",
         ]
 
-        data = self._post(
-            API_TIME_SERIES,
-            {
-                "deviceId": device_id,
-                "count": 2000,
-                "page": 1,
-                "fromTime": self._format_time(start_time),
-                "toTime": self._format_time(end_time),
-                "orderByTimeAsc": True,
-                "keys": keys,
-            },
-        )
+        request_body = {
+            "deviceId": device_id,
+            "count": 2000,
+            "page": 1,
+            "fromTime": self._format_time(start_time),
+            "toTime": self._format_time(end_time),
+            "orderByTimeAsc": True,
+            "keys": keys,
+        }
+        data = self._post(API_TIME_SERIES, request_body)
 
         if data.get("code") not in (0, None):
             raise RuntimeError(
@@ -793,11 +806,32 @@ class SolarOfThingsAPI:
             if isinstance(arr, list) and arr:
                 latest_values[key] = arr[-1]
 
-        # Unit normalisation: acOutputActivePower is kW in API → W
+        # Some inverter models (e.g. Siseli HPVINV02) report pvInputPower,
+        # acOutputActivePower and batterySOC under an alternate key name
+        # instead of the documented one. Prefer the canonical key when the
+        # device populates it; fall back to the alternate otherwise.
+        aliased_keys: set[str] = set()
+        for canonical, alternate in ALIAS_GROUPS:
+            if latest_values.get(canonical) is None and latest_values.get(alternate) is not None:
+                latest_values[canonical] = latest_values[alternate]
+                aliased_keys.add(canonical)
+            latest_values.pop(alternate, None)
+
+        # Unit normalisation: acOutputActivePower is always kW in API → W.
+        # pvInputPower is W under the documented key on every device this
+        # integration already supports (pinned by
+        # test_working_device_is_unaffected) but kW when it arrived via the
+        # pvPower alias (confirmed on HPVINV02) — convert only in that case,
+        # so devices that were already working are unaffected.
         if "acOutputActivePower" in latest_values:
             converted = _coerce_number(latest_values["acOutputActivePower"])
             if converted is not None:
                 latest_values["acOutputActivePower"] = converted * 1000.0
+
+        if "pvInputPower" in aliased_keys:
+            converted = _coerce_number(latest_values["pvInputPower"])
+            if converted is not None:
+                latest_values["pvInputPower"] = converted * 1000.0
 
         return latest_values
 
