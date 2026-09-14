@@ -810,16 +810,28 @@ class SolarOfThingsAPI:
         # acOutputActivePower and batterySOC under an alternate key name
         # instead of the documented one. Prefer the canonical key when the
         # device populates it; fall back to the alternate otherwise.
+        aliased_keys: set[str] = set()
         for canonical, alternate in ALIAS_GROUPS:
             if latest_values.get(canonical) is None and latest_values.get(alternate) is not None:
                 latest_values[canonical] = latest_values[alternate]
+                aliased_keys.add(canonical)
             latest_values.pop(alternate, None)
 
-        # Unit normalisation: acOutputActivePower and pvInputPower are kW in API → W
-        for _power_key in ("acOutputActivePower", "pvInputPower"):
-            converted = _coerce_number(latest_values.get(_power_key))
+        # Unit normalisation: acOutputActivePower is always kW in API → W.
+        # pvInputPower is W under the documented key on every device this
+        # integration already supports (pinned by
+        # test_working_device_is_unaffected) but kW when it arrived via the
+        # pvPower alias (confirmed on HPVINV02) — convert only in that case,
+        # so devices that were already working are unaffected.
+        if "acOutputActivePower" in latest_values:
+            converted = _coerce_number(latest_values["acOutputActivePower"])
             if converted is not None:
-                latest_values[_power_key] = converted * 1000.0
+                latest_values["acOutputActivePower"] = converted * 1000.0
+
+        if "pvInputPower" in aliased_keys:
+            converted = _coerce_number(latest_values["pvInputPower"])
+            if converted is not None:
+                latest_values["pvInputPower"] = converted * 1000.0
 
         return latest_values
 
