@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.5.1] - 2026-09-14
+
+### Fixed
+- **Adding a station could fail outright with a cryptic portal error.**
+  Time zone has always been a free-text field; a value that isn't a real
+  IANA zone id (a continent name like `Europe` rather than `Europe/Warsaw`,
+  for example) was sent as-is to the portal, which rejected the very first
+  request with `Timeseries error code=20101 message=Illegal argument` — with
+  nothing in the error pointing at time zone as the cause. The field is now
+  validated locally before any API call, with a clear in-form error instead.
+  Thanks to @Terrorr for the report (#21).
+- **PV Input Power, AC Output Power and Battery State of Charge stuck on
+  `unknown` on Siseli HPVINV02 devices** ("Inverter Top One" gather
+  protocol), even though the account, station and other sensors all worked
+  normally. This firmware reports those three fields under different key
+  names (`pvPower`, `outputActivePower`, `batteryCapacity`) than the
+  documented ones — the integration now recognises both. Thanks to
+  @UnSpritz for root-causing this via live debug logging and submitting the
+  fix (#13).
+
+### Notes
+- Both fixes are scoped and regression-tested against the full existing
+  suite; a working installation's readings are unaffected either way.
+
 ## [2.5.0] - 2026-09-11
 
 ### Added
