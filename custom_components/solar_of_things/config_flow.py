@@ -36,7 +36,7 @@ from .const import (
     CONF_ACCESS_TOKEN_EXPIRES,
     CONF_REFRESH_TOKEN_EXPIRES,
 )
-from .util import normalise_config_fields
+from .util import normalise_config_fields, is_valid_time_zone
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -139,30 +139,34 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # Trim before validating *and* before storing, so the value that is
             # checked is the same one that gets persisted.
             user_input = normalise_config_fields(user_input)
-            try:
-                info = await _validate_password_auth(self.hass, user_input)
-            except InvalidAuth:
-                errors["base"] = "invalid_auth"
-            except CannotConnect:
-                errors["base"] = "cannot_connect"
-            except Exception:
-                _LOGGER.exception("Unexpected exception in password step")
-                errors["base"] = "unknown"
+            time_zone = user_input.get(CONF_TIME_ZONE) or "Asia/Manila"
+            if not is_valid_time_zone(time_zone):
+                errors["base"] = "invalid_time_zone"
             else:
-                await self.async_set_unique_id(f"station_{user_input[CONF_STATION_ID]}")
-                self._abort_if_unique_id_configured()
-                entry_data = {
-                    CONF_USER_ID: user_input[CONF_USER_ID],
-                    CONF_PASSWORD: user_input[CONF_PASSWORD],
-                    CONF_STATION_ID: user_input[CONF_STATION_ID],
-                    CONF_DEVICE_ID: user_input.get(CONF_DEVICE_ID, ""),
-                    CONF_TIME_ZONE: user_input.get(CONF_TIME_ZONE, "Asia/Manila"),
-                    CONF_IOT_TOKEN: info[CONF_IOT_TOKEN],
-                    CONF_REFRESH_TOKEN: info[CONF_REFRESH_TOKEN],
-                    CONF_ACCESS_TOKEN_EXPIRES: info[CONF_ACCESS_TOKEN_EXPIRES],
-                    CONF_REFRESH_TOKEN_EXPIRES: info[CONF_REFRESH_TOKEN_EXPIRES],
-                }
-                return self.async_create_entry(title=info["title"], data=entry_data)
+                try:
+                    info = await _validate_password_auth(self.hass, user_input)
+                except InvalidAuth:
+                    errors["base"] = "invalid_auth"
+                except CannotConnect:
+                    errors["base"] = "cannot_connect"
+                except Exception:
+                    _LOGGER.exception("Unexpected exception in password step")
+                    errors["base"] = "unknown"
+                else:
+                    await self.async_set_unique_id(f"station_{user_input[CONF_STATION_ID]}")
+                    self._abort_if_unique_id_configured()
+                    entry_data = {
+                        CONF_USER_ID: user_input[CONF_USER_ID],
+                        CONF_PASSWORD: user_input[CONF_PASSWORD],
+                        CONF_STATION_ID: user_input[CONF_STATION_ID],
+                        CONF_DEVICE_ID: user_input.get(CONF_DEVICE_ID, ""),
+                        CONF_TIME_ZONE: time_zone,
+                        CONF_IOT_TOKEN: info[CONF_IOT_TOKEN],
+                        CONF_REFRESH_TOKEN: info[CONF_REFRESH_TOKEN],
+                        CONF_ACCESS_TOKEN_EXPIRES: info[CONF_ACCESS_TOKEN_EXPIRES],
+                        CONF_REFRESH_TOKEN_EXPIRES: info[CONF_REFRESH_TOKEN_EXPIRES],
+                    }
+                    return self.async_create_entry(title=info["title"], data=entry_data)
 
         return self.async_show_form(
             step_id="password",
@@ -190,17 +194,21 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             # The entry is created from this same dict, so trim it up front.
             user_input = normalise_config_fields(user_input)
-            try:
-                info = await _validate_token_auth(self.hass, user_input)
-            except CannotConnect:
-                errors["base"] = "cannot_connect"
-            except Exception:
-                _LOGGER.exception("Unexpected exception in token step")
-                errors["base"] = "unknown"
+            time_zone = user_input.get(CONF_TIME_ZONE) or "Asia/Manila"
+            if not is_valid_time_zone(time_zone):
+                errors["base"] = "invalid_time_zone"
             else:
-                await self.async_set_unique_id(f"station_{user_input[CONF_STATION_ID]}")
-                self._abort_if_unique_id_configured()
-                return self.async_create_entry(title=info["title"], data=user_input)
+                try:
+                    info = await _validate_token_auth(self.hass, user_input)
+                except CannotConnect:
+                    errors["base"] = "cannot_connect"
+                except Exception:
+                    _LOGGER.exception("Unexpected exception in token step")
+                    errors["base"] = "unknown"
+                else:
+                    await self.async_set_unique_id(f"station_{user_input[CONF_STATION_ID]}")
+                    self._abort_if_unique_id_configured()
+                    return self.async_create_entry(title=info["title"], data=user_input)
 
         return self.async_show_form(
             step_id="token",

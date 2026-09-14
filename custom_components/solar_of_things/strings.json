@@ -16,7 +16,7 @@
           "password": "Password",
           "station_id": "Station ID (required)",
           "device_id": "Device ID (optional — blank to auto-discover)",
-          "time_zone": "Time zone (e.g. Asia/Manila)"
+          "time_zone": "Time zone (full IANA id, e.g. Europe/Warsaw — not just \"Europe\")"
         }
       },
       "token": {
@@ -26,7 +26,7 @@
           "iot_token": "IOT Token",
           "station_id": "Station ID (required)",
           "device_id": "Device ID (optional — blank to auto-discover)",
-          "time_zone": "Time zone (e.g. Asia/Manila)"
+          "time_zone": "Time zone (full IANA id, e.g. Europe/Warsaw — not just \"Europe\")"
         }
       },
       "reauth_confirm": {
@@ -41,7 +41,8 @@
     "error": {
       "cannot_connect": "Cannot connect to the Solar of Things API. Check credentials, Station ID, and network access.",
       "invalid_auth": "Invalid user ID or password. Please try again.",
-      "unknown": "Unexpected error. Check Home Assistant logs for details."
+      "unknown": "Unexpected error. Check Home Assistant logs for details.",
+      "invalid_time_zone": "That's not a valid time zone id. Use a full IANA zone like \"Europe/Warsaw\" or \"America/New_York\" — not a continent or country name."
     },
     "abort": {
       "already_configured": "This station is already configured.",
