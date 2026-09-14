@@ -8,6 +8,16 @@ body:
         Thanks for reporting! Please fill in as much detail as possible.
         **Redact your IOT-Token** — keep only the first and last 4 characters.
 
+        **Before you file:** this integration is built and maintained for the
+        author's own inverter (a Sumry 3600), shared as-is — not a supported
+        product for every Siseli-connected device. See [Support &
+        Scope](https://github.com/Conexo-Casa/solar-of-things-ha#support--scope)
+        in the README. The detail you provide below (exact field names, a raw
+        API capture, your inverter/dongle model) is what actually gets bugs
+        fixed for hardware the author doesn't own — a report without it is
+        much less likely to go anywhere. Forking and patching it yourself is
+        always an option too.
+
   - type: input
     id: ha_version
     attributes:

@@ -7,6 +7,12 @@ body:
       value: |
         Thanks for the suggestion! Please describe the feature clearly.
 
+        This integration is maintained for the author's own hardware on a
+        best-effort basis — see [Support &
+        Scope](https://github.com/Conexo-Casa/solar-of-things-ha#support--scope)
+        in the README. Feature requests for devices the author doesn't own are
+        welcome, but a pull request gets there faster than a request alone.
+
   - type: textarea
     id: problem
     attributes:

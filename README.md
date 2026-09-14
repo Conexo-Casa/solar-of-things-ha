@@ -20,11 +20,20 @@
   Real-time power data · Battery management · Grid control · Energy Dashboard ready
 </p>
 
+> [!IMPORTANT]
+> **Support scope.** This integration was built and is maintained for the author's
+> own hardware (a Sumry 3600 inverter). It's shared publicly so others with
+> compatible or similar Siseli-connected devices can use and adapt it — not as a
+> commitment to support every inverter model or WiFi dongle variant sold under the
+> Siseli platform. See [Support & Scope](#support--scope) below before opening an
+> issue.
+
 ---
 
 ## Table of Contents
 
 - [Overview](#overview)
+- [Support & Scope](#support--scope)
 - [Features](#features)
 - [Sensors](#sensors)
 - [Control Entities](#control-entities)
@@ -53,6 +62,35 @@ The **Solar of Things** integration connects Home Assistant to the
 - **Multi-station support** — add the integration once per station.
 
 > **Developed by [Conexo Casa](https://conexocasa.org)** — building accessible technology for people with neurocognitive impairments and the elderly.
+
+---
+
+## Support & Scope
+
+This integration exists because the author owns a **Sumry 3600** inverter and
+wanted it in Home Assistant. It's published here in case it's useful to anyone
+else on the Siseli platform — not as a product with a support contract behind
+it.
+
+In practice, that means:
+
+- **Bug fixes are best-effort**, made when the author has time, and prioritized
+  toward the hardware they actually own and can test against.
+- **Reports about other inverter models, WiFi dongle variants, or firmware
+  families are genuinely welcome** — several real fixes in this project's
+  history came directly from a detailed report (exact field names, a raw API
+  capture, confirmed against real hardware). But a report alone doesn't
+  guarantee a fix, especially for hardware the author has no way to verify
+  against.
+- **There's no SLA, no roadmap commitment, and no guarantee any specific
+  device will ever be supported.**
+
+**You're encouraged to fork this repository.** The code is MIT-licensed
+specifically so you can adapt it to your own inverter, dongle, or firmware
+without waiting on anyone. If you build a fix for your hardware, a pull
+request back is very welcome — see [Contributing](#contributing) — but
+forking and maintaining your own copy is a completely legitimate way to use
+this project, not a fallback.
 
 ---
 
@@ -344,6 +382,11 @@ Restart HA, reproduce the issue, then check **Settings → System → Logs**.
 ---
 
 ## Contributing
+
+Adding support for hardware the maintainer doesn't own is exactly what forking
+and contributing is for — see [Support & Scope](#support--scope). The fixes
+most likely to get merged are the ones that came with a real capture against
+real hardware, not a guess.
 
 1. Fork the repo and create a feature branch.
 2. Make changes and ensure Python syntax is valid:
