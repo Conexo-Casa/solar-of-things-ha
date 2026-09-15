@@ -94,6 +94,7 @@ from .const import (
     API_ENERGY_FLOW,
     ENERGY_FLOW_RULES,
     REALTIME_PROBE_KEYS,
+    SETTING_KEY_ALIASES,
     IOT_APP_ID,
     IOT_APP_SECRET_ENC,
     TOKEN_REFRESH_LEAD_SECONDS,
@@ -304,6 +305,29 @@ def map_energy_flow_fields(fields: Any) -> dict[str, float]:
                 break
 
     return mapped
+
+
+def resolve_setting_key(settings: Any, canonical: str) -> str | None:
+    """Return whichever alias of `canonical` is actually present in `settings`.
+
+    `settings` is the raw {settingKey: settingObject} dict from
+    get_device_settings(). Pure function: no network access, no instance
+    state, so read (current value) and write (which key to send) always agree
+    on the exact same resolution.
+
+    Returns None when the device's writable-config listing doesn't expose any
+    known alias of this setting at all (issue #18: a FCHAO inverter doesn't
+    expose batteryChargeLimit / batteryDischargeLimit / gridChargeLimit under
+    ANY known name) — callers use this to report the entity unavailable
+    rather than send a write that is guaranteed to fail with
+    code=70134 "Config attribute not exists".
+    """
+    if not isinstance(settings, dict):
+        return None
+    for candidate in SETTING_KEY_ALIASES.get(canonical, (canonical,)):
+        if candidate in settings:
+            return candidate
+    return None
 
 
 def has_realtime_values(values: Any) -> bool:
@@ -1048,47 +1072,88 @@ class SolarOfThingsAPI:
     }
     _CHARGER_PRIORITY_REVERSE: dict[int, str] = {v: k for k, v in _CHARGER_PRIORITY_MAP.items()}
 
-    def set_operating_mode(self, device_id: str, mode: str) -> None:
-        """Set Output Source Priority.  mode is one of _OUTPUT_MODE_MAP keys."""
+    def _resolve_write_key(self, canonical: str, settings: dict[str, Any] | None) -> str:
+        """Return the actual writable-config key name to send for `canonical`.
+
+        Falls back to the canonical name itself when `settings` wasn't passed
+        or resolves to nothing — this keeps every device that already worked
+        before #18 sending exactly the same key it always has.
+        """
+        if settings is None:
+            return canonical
+        return resolve_setting_key(settings, canonical) or canonical
+
+    def set_operating_mode(
+        self, device_id: str, mode: str, settings: dict[str, Any] | None = None
+    ) -> None:
+        """Set Output Source Priority.  mode is one of _OUTPUT_MODE_MAP keys.
+
+        `settings` is the coordinator's cached get_device_settings() result;
+        pass it so a device whose firmware exposes this control under a
+        different key name (e.g. FCHAO's `setOutputSourcePriority`, #18) gets
+        the working key instead of the documented one.
+        """
         value = self._OUTPUT_MODE_MAP.get(mode)
         if value is None:
             raise ValueError(f"Unknown operating mode: {mode!r}. "
                              f"Valid options: {list(self._OUTPUT_MODE_MAP)!r}")
-        self._write_setting(device_id, "outputSourcePrioritySetting", value)
+        key = self._resolve_write_key("outputSourcePrioritySetting", settings)
+        self._write_setting(device_id, key, value)
 
-    def set_battery_priority(self, device_id: str, mode: str) -> None:
+    def set_battery_priority(
+        self, device_id: str, mode: str, settings: dict[str, Any] | None = None
+    ) -> None:
         """Set Charger Source Priority.  mode is one of _CHARGER_PRIORITY_MAP keys."""
         value = self._CHARGER_PRIORITY_MAP.get(mode)
         if value is None:
             raise ValueError(f"Unknown battery priority: {mode!r}. "
                              f"Valid options: {list(self._CHARGER_PRIORITY_MAP)!r}")
-        self._write_setting(device_id, "chargerSourcePrioritySetting", value)
+        key = self._resolve_write_key("chargerSourcePrioritySetting", settings)
+        self._write_setting(device_id, key, value)
 
-    def set_grid_charging(self, device_id: str, enabled: bool) -> None:
+    def set_grid_charging(
+        self, device_id: str, enabled: bool, settings: dict[str, Any] | None = None
+    ) -> None:
         """Set AC Input Range: Appliance (0, grid charging allowed) / UPS (1, bypass)."""
-        self._write_setting(device_id, "acInputRangeSetting", 0 if enabled else 1)
+        key = self._resolve_write_key("acInputRangeSetting", settings)
+        self._write_setting(device_id, key, 0 if enabled else 1)
 
-    def set_grid_feed_in(self, device_id: str, enabled: bool) -> None:
+    def set_grid_feed_in(
+        self, device_id: str, enabled: bool, settings: dict[str, Any] | None = None
+    ) -> None:
         """Enable or disable the GRID grid switch (batteryPowerLimitingSetting)."""
-        self._write_setting(device_id, "batteryPowerLimitingSetting", 1 if enabled else 0)
+        key = self._resolve_write_key("batteryPowerLimitingSetting", settings)
+        self._write_setting(device_id, key, 1 if enabled else 0)
 
-    def set_backup_mode(self, device_id: str, enabled: bool) -> None:
+    def set_backup_mode(
+        self, device_id: str, enabled: bool, settings: dict[str, Any] | None = None
+    ) -> None:
         """Set Output Source Priority to SBU (backup/off-grid priority) when True,
         or SUB (solar-first, grid-supplemented) when False."""
         value = 2 if enabled else 1   # SBU=2 (battery before grid), SUB=1
-        self._write_setting(device_id, "outputSourcePrioritySetting", value)
+        key = self._resolve_write_key("outputSourcePrioritySetting", settings)
+        self._write_setting(device_id, key, value)
 
-    def set_battery_charge_limit(self, device_id: str, percent: int) -> None:
+    def set_battery_charge_limit(
+        self, device_id: str, percent: int, settings: dict[str, Any] | None = None
+    ) -> None:
         """Set battery charge limit (0–100 %)."""
-        self._write_setting(device_id, "batteryChargeLimit", percent)
+        key = self._resolve_write_key("batteryChargeLimit", settings)
+        self._write_setting(device_id, key, percent)
 
-    def set_battery_discharge_limit(self, device_id: str, percent: int) -> None:
+    def set_battery_discharge_limit(
+        self, device_id: str, percent: int, settings: dict[str, Any] | None = None
+    ) -> None:
         """Set battery discharge limit / minimum SOC (0–100 %)."""
-        self._write_setting(device_id, "batteryDischargeLimit", percent)
+        key = self._resolve_write_key("batteryDischargeLimit", settings)
+        self._write_setting(device_id, key, percent)
 
-    def set_grid_charge_limit(self, device_id: str, watts: int) -> None:
+    def set_grid_charge_limit(
+        self, device_id: str, watts: int, settings: dict[str, Any] | None = None
+    ) -> None:
         """Set maximum grid charge power (0–5000 W)."""
-        self._write_setting(device_id, "gridChargeLimit", watts)
+        key = self._resolve_write_key("gridChargeLimit", settings)
+        self._write_setting(device_id, key, watts)
 
     def test_connection(self, station_id: str) -> bool:
         """Return True if we can reach the device-list endpoint successfully."""

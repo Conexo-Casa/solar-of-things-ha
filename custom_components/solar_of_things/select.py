@@ -9,6 +9,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .api import resolve_setting_key
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -57,6 +58,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
 
 class _BaseSelect(CoordinatorEntity, SelectEntity):
+    # Canonical setting key this entity controls (set by subclasses). Used
+    # with resolve_setting_key() so a firmware that exposes the same control
+    # under a different key name (#18) still reads and writes correctly, and
+    # a firmware that doesn't expose it under any known name reports
+    # unavailable instead of offering a control guaranteed to fail.
+    _canonical_key: str = ""
+
     def __init__(self, api, coordinator, station_id: str, device_id: str, device_name: str) -> None:
         super().__init__(coordinator)
         self._api = api
@@ -74,12 +82,21 @@ class _BaseSelect(CoordinatorEntity, SelectEntity):
             "via_device": (DOMAIN, self._station_id),
         }
 
+    @property
+    def available(self) -> bool:
+        if not super().available:
+            return False
+        settings = (self.coordinator.data or {}).get("settings")
+        return resolve_setting_key(settings, self._canonical_key) is not None
+
 
 class SolarOfThingsOperatingModeSelect(_BaseSelect):
     """Select entity for Output Source Priority (outputSourcePrioritySetting).
 
     Reflects the real device API key.  Values 0/1/2 map to USO/SUB/SBU.
     """
+
+    _canonical_key = "outputSourcePrioritySetting"
 
     def __init__(self, api, coordinator, station_id: str, device_id: str, device_name: str) -> None:
         super().__init__(api, coordinator, station_id, device_id, device_name)
@@ -91,7 +108,8 @@ class SolarOfThingsOperatingModeSelect(_BaseSelect):
     @property
     def current_option(self) -> str | None:
         settings = ((self.coordinator.data or {}).get("settings") or {})
-        entry = settings.get("outputSourcePrioritySetting")
+        key = resolve_setting_key(settings, self._canonical_key)
+        entry = settings.get(key) if key else None
         if entry is None:
             return None
         raw = entry.get("value") if isinstance(entry, dict) else entry
@@ -101,7 +119,10 @@ class SolarOfThingsOperatingModeSelect(_BaseSelect):
             return None
 
     async def async_select_option(self, option: str) -> None:
-        await self.hass.async_add_executor_job(self._api.set_operating_mode, self._device_id, option)
+        settings = (self.coordinator.data or {}).get("settings")
+        await self.hass.async_add_executor_job(
+            self._api.set_operating_mode, self._device_id, option, settings
+        )
         await self.coordinator.async_request_refresh()
 
 
@@ -110,6 +131,8 @@ class SolarOfThingsBatteryPrioritySelect(_BaseSelect):
 
     Reflects the real device API key.  Values 0/1/2 map to CSO/SNU/OSO.
     """
+
+    _canonical_key = "chargerSourcePrioritySetting"
 
     def __init__(self, api, coordinator, station_id: str, device_id: str, device_name: str) -> None:
         super().__init__(api, coordinator, station_id, device_id, device_name)
@@ -121,7 +144,8 @@ class SolarOfThingsBatteryPrioritySelect(_BaseSelect):
     @property
     def current_option(self) -> str | None:
         settings = ((self.coordinator.data or {}).get("settings") or {})
-        entry = settings.get("chargerSourcePrioritySetting")
+        key = resolve_setting_key(settings, self._canonical_key)
+        entry = settings.get(key) if key else None
         if entry is None:
             return None
         raw = entry.get("value") if isinstance(entry, dict) else entry
@@ -131,5 +155,8 @@ class SolarOfThingsBatteryPrioritySelect(_BaseSelect):
             return None
 
     async def async_select_option(self, option: str) -> None:
-        await self.hass.async_add_executor_job(self._api.set_battery_priority, self._device_id, option)
+        settings = (self.coordinator.data or {}).get("settings")
+        await self.hass.async_add_executor_job(
+            self._api.set_battery_priority, self._device_id, option, settings
+        )
         await self.coordinator.async_request_refresh()

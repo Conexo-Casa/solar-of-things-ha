@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.7.0] - 2026-09-15
+
+### Fixed
+- **Writing a control setting failed with `code=70134 "Config attribute not
+  exists"` on some firmware** — the integration always sent one hardcoded
+  key name per control (e.g. `outputSourcePrioritySetting`), but
+  lukaszkwapien's full writable-config dump for a FCHAO inverter (#18)
+  confirmed that firmware exposes the same control as
+  `setOutputSourcePriority` instead, and does not expose Battery Charge
+  Limit, Battery Discharge Limit, or Grid Charge Limit under **any** key
+  name at all. This is the same class of bug #13 fixed for sensor reads,
+  now fixed for control writes and their read-back too: each control now
+  resolves the real key name from the device's own writable-config listing
+  (already fetched every update cycle), and an entity whose control isn't
+  exposed under any known name now reports **unavailable** in Home
+  Assistant instead of accepting a click that is guaranteed to fail.
+- **Battery Charge Limit, Battery Discharge Limit, and Grid Charge Limit
+  number entities never displayed a value, even on devices that fully
+  support them.** `native_value` was returning the entire settings object
+  (`{"key", "value", "valueDisplay", ...}`) instead of extracting the numeric
+  `value` field — the same object every other read path already correctly
+  unwraps. Existing configured limits will now show correctly.
+
+### Notes
+- Every device that worked before this release keeps sending exactly the
+  same key names it always has — the alias table only adds alternates, and
+  falls back to the original documented key when nothing else is known.
+- If your inverter exposes a control under yet another key name, the
+  affected entity will now show as unavailable rather than fail silently or
+  loudly — please open an issue with your device's writable-config listing
+  (`GET /apis/remote/device/configs/cache/get?deviceId=<yours>`) so it can be
+  added.
+
 ## [2.6.1] - 2026-09-15
 
 ### Fixed

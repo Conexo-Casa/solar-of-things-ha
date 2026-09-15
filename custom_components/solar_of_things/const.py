@@ -279,3 +279,28 @@ SENSOR_DEFINITIONS = {
         "icon": "mdi:percent",
     },
 }
+
+# ─── Device-setting key aliases (write path) ───────────────────────────────────
+# Several inverter firmwares expose the same logical control under a different
+# writable-config key name than the one this integration was written against —
+# the same class of bug #13 already fixed for sensor *reads*, but here for
+# control *writes* (and their matching read-back for current state). Confirmed
+# by lukaszkwapien's full writable-config dump for a FCHAO inverter (#18):
+#   Output Source Priority: the documented `outputSourcePrioritySetting` fails
+#   with `code=70134 "Config attribute not exists"` on this firmware, which
+#   exposes the same control as `setOutputSourcePriority` instead.
+# Every other control below has no confirmed alternate name yet — its tuple is
+# just itself. The same dump also confirmed FCHAO does not expose
+# batteryChargeLimit / batteryDischargeLimit / gridChargeLimit under ANY name;
+# for those, resolve_setting_key() in api.py returning None is used to mark
+# the entity unavailable rather than let the user trigger a write that is
+# guaranteed to fail with the same portal error.
+SETTING_KEY_ALIASES: dict[str, tuple[str, ...]] = {
+    "outputSourcePrioritySetting": ("outputSourcePrioritySetting", "setOutputSourcePriority"),
+    "chargerSourcePrioritySetting": ("chargerSourcePrioritySetting",),
+    "acInputRangeSetting": ("acInputRangeSetting",),
+    "batteryPowerLimitingSetting": ("batteryPowerLimitingSetting",),
+    "batteryChargeLimit": ("batteryChargeLimit",),
+    "batteryDischargeLimit": ("batteryDischargeLimit",),
+    "gridChargeLimit": ("gridChargeLimit",),
+}
