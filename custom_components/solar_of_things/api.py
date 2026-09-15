@@ -120,6 +120,18 @@ class AuthenticationError(Exception):
     """Raised when login credentials are rejected by the server."""
 
 
+class EnergyFlowRuleNotConfiguredError(RuntimeError):
+    """Raised when the portal returns code 70132 ("Energy flow rule not exists").
+
+    This means the device's *account* has no energy-flow rule configured on
+    the portal side — a per-device setup step on solar.siseli.com, not
+    something this integration can fix by mapping a different field. Reported
+    in issue #21: without this, the fallback failing this way looked
+    identical to "no data returned", so a device in this state got no
+    sensors and no warning either.
+    """
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Signing helpers  (reverse-engineered from portal umi.js)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -729,6 +741,19 @@ class SolarOfThingsAPI:
             except TokenExpiredError:
                 # Must reach the coordinator so it can start the re-auth flow.
                 raise
+            except EnergyFlowRuleNotConfiguredError as err:
+                # A portal-side setup gap, not something a field mapping can
+                # fix — but "no sensors, no warnings" (issue #21) looked
+                # identical to a bug, so this needs to be loud by default.
+                _LOGGER.warning(
+                    "SolarOfThings device %s: no energy-flow rule is configured "
+                    "for this device in the Siseli portal (%s). Realtime sensors "
+                    "will stay unavailable until an energy-flow rule is set up "
+                    "for it there, or its historical time-series endpoint starts "
+                    "returning data instead.",
+                    device_id,
+                    err,
+                )
             except Exception as err:
                 _LOGGER.debug(
                     "SolarOfThings device %s: energy-flow fallback unavailable: %s",
@@ -854,11 +879,14 @@ class SolarOfThingsAPI:
         """
         data = self._get(API_ENERGY_FLOW, {"deviceId": device_id, "dataSource": 1})
 
-        if data.get("code") not in (0, None, "0"):
-            raise RuntimeError(
-                f"Energy-flow error code={data.get('code')} "
-                f"message={data.get('message') or data.get('msg')}"
-            )
+        code = data.get("code")
+        if code not in (0, None, "0"):
+            message = data.get("message") or data.get("msg")
+            if code in (70132, "70132"):
+                raise EnergyFlowRuleNotConfiguredError(
+                    f"Energy-flow error code={code} message={message}"
+                )
+            raise RuntimeError(f"Energy-flow error code={code} message={message}")
 
         payload = data.get("data") or {}
         state = payload.get("deviceAttributeState") or {}

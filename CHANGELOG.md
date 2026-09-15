@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.6.1] - 2026-09-15
+
+### Fixed
+- **A device with no energy-flow rule configured on the portal produced no
+  sensors and no warning**, which was indistinguishable from a bug in this
+  integration. The portal's `code=70132 "Energy flow rule not exists"`
+  response fell into the same silent DEBUG-level handling as a merely
+  unsupported/404 endpoint. That specific error now logs a clear WARNING
+  explaining the fix is a portal-side setup step (configuring an
+  energy-flow rule for the device on solar.siseli.com), not something a
+  future field mapping can resolve. Reported in #21.
+
 ## [2.6.0] - 2026-09-15
 
 ### Added
