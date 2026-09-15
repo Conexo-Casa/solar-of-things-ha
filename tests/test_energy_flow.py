@@ -6,6 +6,10 @@ entity "unknown" while the portal shows live data (issue #7).
 
 The field names and the sample values in ``ISSUE_7_NIGHT_PAYLOAD`` are taken
 verbatim from that report, which was captured at night — hence the zeros.
+The daylight payloads (``ISSUE_7_AC_PV_CHARGING`` / ``ISSUE_7_NOAC_PV_DISCHARGING``)
+are trimmed from hidemichixt-creator's four-state capture set posted
+2026-09-15, which settled the unit and sign questions the night capture
+could not.
 """
 from __future__ import annotations
 
@@ -36,6 +40,36 @@ ISSUE_7_NIGHT_PAYLOAD = {
     "aPhaseOutputFrequency": 50,
 }
 
+# Trimmed from UPS_AC_PV_BatteryCharging.txt (issue #7, 2026-09-15): AC
+# connected, PV producing, battery charging.
+ISSUE_7_AC_PV_CHARGING = {
+    "pv1Power": 234,
+    "pv2Power": 0,
+    "load_power": 0.614,  # kW, per the payload's own "unit" field
+    "aPhaseMainsPower": -1100,  # W, per the payload's own "unit" field
+    "bPhaseMainsPower": 0,
+    "cPhaseMainsPower": 0,
+    "positiveTerminalBatteryCurrent": -27,
+    "negativeTerminalBatteryCurrent": 0,
+    "batteryPower": -720,
+    "bmsSOC": 54,
+}
+
+# Trimmed from UPS_NoAC_PV_BatteryDischarging.txt (issue #7, 2026-09-15): AC
+# disconnected, PV producing, battery discharging.
+ISSUE_7_NOAC_PV_DISCHARGING = {
+    "pv1Power": 262,
+    "pv2Power": 0,
+    "load_power": 0.635,
+    "aPhaseMainsPower": 0,
+    "bPhaseMainsPower": 0,
+    "cPhaseMainsPower": 0,
+    "positiveTerminalBatteryCurrent": 17.6,
+    "negativeTerminalBatteryCurrent": 0,
+    "batteryPower": 462,
+    "bmsSOC": 54,
+}
+
 
 # ─── Pure mapping ──────────────────────────────────────────────────────────────
 
@@ -48,16 +82,53 @@ def test_issue_7_payload_maps_to_canonical_keys() -> None:
     assert mapped["batteryVoltage"] == 26.6
     assert mapped["batterySOC"] == 100.0
     assert mapped["batteryPower"] == 9.0
+    # Confirmed by the 2026-09-15 daylight captures (see below) — 0 at night
+    # is a real reading now, not an unconfirmed guess.
+    assert mapped["acOutputActivePower"] == 0.0
+    assert mapped["batteryChargingCurrent"] == 0.0
+    assert mapped["batteryDischargeCurrent"] == 0.4  # idle trickle, per the report
 
-    # Unit or direction unconfirmed — must stay ABSENT rather than publish a
-    # possibly-wrong value. See ENERGY_FLOW_UNVERIFIED in const.py.
-    for unconfirmed in (
-        "loadPower",
-        "acOutputActivePower",
-        "batteryChargingCurrent",
-        "batteryDischargeCurrent",
-    ):
-        assert unconfirmed not in mapped, unconfirmed
+    # loadPower (camelCase) has no confirmed source — must stay ABSENT rather
+    # than publish a possibly-wrong value. See ENERGY_FLOW_UNVERIFIED in const.py.
+    assert "loadPower" not in mapped
+
+
+def test_ac_output_power_mapped_from_load_power_kw() -> None:
+    """load_power is confirmed kW by the payload's own "unit" tag → x1000."""
+    mapped = map_energy_flow_fields(ISSUE_7_AC_PV_CHARGING)
+    assert mapped["acOutputActivePower"] == 614.0
+
+
+def test_grid_import_and_feed_in_split_from_signed_mains_power() -> None:
+    """aPhaseMainsPower is confirmed W; negative means importing from mains.
+
+    Sign confirmed by conservation of power: load (614 W) + battery charging
+    (720 W) - PV (234 W) = 1100 W, matching |aPhaseMainsPower| exactly.
+    """
+    mapped = map_energy_flow_fields(ISSUE_7_AC_PV_CHARGING)
+    assert mapped["gridPower"] == 1100.0
+    assert mapped["feedInPower"] == 0.0  # not exporting while importing
+
+    # No AC connection at all -> the field reads 0, which is a real
+    # "no grid" measurement, not a missing one.
+    mapped_no_ac = map_energy_flow_fields(ISSUE_7_NOAC_PV_DISCHARGING)
+    assert mapped_no_ac["gridPower"] == 0.0
+    assert mapped_no_ac["feedInPower"] == 0.0
+
+
+def test_battery_charging_and_discharge_current_split_by_sign() -> None:
+    """positiveTerminalBatteryCurrent flips sign with charge direction.
+
+    Confirmed across all four states captured for issue #7: negative while
+    charging, positive while discharging.
+    """
+    charging = map_energy_flow_fields(ISSUE_7_AC_PV_CHARGING)
+    assert charging["batteryChargingCurrent"] == 27.0
+    assert charging["batteryDischargeCurrent"] == 0.0
+
+    discharging = map_energy_flow_fields(ISSUE_7_NOAC_PV_DISCHARGING)
+    assert discharging["batteryChargingCurrent"] == 0.0
+    assert discharging["batteryDischargeCurrent"] == 17.6
 
 
 def test_unverified_fields_are_never_mapped() -> None:

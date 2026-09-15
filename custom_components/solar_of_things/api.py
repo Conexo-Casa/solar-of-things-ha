@@ -264,14 +264,24 @@ def map_energy_flow_fields(fields: Any) -> dict[str, float]:
 
     for canonical, rules in ENERGY_FLOW_RULES.items():
         for mode, sources, scale in rules:
-            if mode == "sum":
+            if mode in ("sum", "clamp_pos", "clamp_neg"):
                 values = [
                     number
                     for source in sources
                     if (number := _coerce_number(fields.get(source))) is not None
                 ]
                 if values:
-                    mapped[canonical] = sum(values) * scale
+                    total = sum(values) * scale
+                    if mode == "clamp_pos":
+                        # Positive/export half of a signed field (e.g. mains
+                        # power going positive = feeding back to the grid).
+                        total = max(0.0, total)
+                    elif mode == "clamp_neg":
+                        # Negative/import half of the same signed field,
+                        # flipped positive for display (e.g. mains power
+                        # going negative = drawing from the grid).
+                        total = max(0.0, -total)
+                    mapped[canonical] = total
             else:  # "first" — first present source field wins
                 for source in sources:
                     number = _coerce_number(fields.get(source))

@@ -100,18 +100,39 @@ SENSOR_KEYS = [
 # `scale` converts the source value into the unit declared in
 # SENSOR_DEFINITIONS.
 #
-# ONLY mappings whose unit is confirmed by a NON-ZERO observed value are enabled
-# here.  Every rule below has scale 1.0 — the value is published exactly as the
-# portal reports it — so no rule in this table can be 1000x wrong.  The issue #7
-# payload was captured at night, so it pinned down the units of only these
-# fields:
-#   bmsBatteryVoltage / positiveTerminalBatteryVoltage   26.6 V
-#   batteryPercentage / bmsSOC                           100 %
-#   batteryPower                                         9 W
-#   pv1Power / pv2Power                                  W (labelled; 0 at night)
-# Anything that would need a kW→W conversion, or whose direction/sign is
-# ambiguous, is listed in ENERGY_FLOW_UNVERIFIED below and left unmapped until a
-# daytime, under-load capture confirms it.
+# ONLY mappings whose unit AND (where relevant) sign are confirmed by an
+# observed value are enabled here — no rule in this table can be 1000x wrong
+# or have charge/discharge backwards. Two capture rounds confirmed the table
+# below:
+#   Night (0 W, settles nothing but the always-zero fields):
+#     bmsBatteryVoltage / positiveTerminalBatteryVoltage   26.6 V
+#     batteryPercentage / bmsSOC                           100 %
+#     batteryPower                                         9 W
+#     pv1Power / pv2Power                                  W (labelled; 0 at night)
+#   Daylight, four states — AC/no-AC x charging/discharging (issue #7,
+#   2026-09-15, hidemichixt-creator's four-file capture set) — settled the
+#   rest via the API's own per-field "unit" tag plus arithmetic cross-checks:
+#     load_power              "unit": "kW" in the payload itself (not guessed).
+#                              AC Output Power / Load Power.
+#     aPhaseMainsPower/b/c     "unit": "W" in the payload itself. Sign confirmed
+#                              by conservation of power: load_power + charging
+#                              batteryPower − pv1Power reproduces
+#                              |aPhaseMainsPower| to within rounding in both
+#                              AC-connected samples (e.g. 614+720−234=1100 W).
+#                              Negative = importing from mains; positive would
+#                              be feed-in by the same physical symmetry (not
+#                              yet directly observed — no sample went positive).
+#     positiveTerminalBatteryCurrent   Sign flips consistently across all four
+#                              states: negative while charging (-17.6, -27 A),
+#                              positive while discharging (+25.5, +17.6 A).
+#                              negativeTerminalBatteryCurrent stayed 0 in every
+#                              sample on this device/firmware and is still
+#                              unused — see ENERGY_FLOW_UNVERIFIED.
+# Rule modes: "first" (first present source wins), "sum" (add every present
+# source), "clamp_pos" (sum, then max(0, total) — the positive/export half of
+# a signed field), "clamp_neg" (sum, then max(0, -total) — the negative/import
+# half). `scale` converts the source value into the unit declared in
+# SENSOR_DEFINITIONS.
 ENERGY_FLOW_RULES: dict[str, list[tuple[str, tuple[str, ...], float]]] = {
     "pvInputPower": [
         ("sum", ("pv1Power", "pv2Power", "pv3Power", "pv4Power"), 1.0),
@@ -125,38 +146,39 @@ ENERGY_FLOW_RULES: dict[str, list[tuple[str, tuple[str, ...], float]]] = {
     "batteryPower": [
         ("first", ("batteryPower",), 1.0),
     ],
+    "acOutputActivePower": [
+        ("sum", ("load_power",), 1000.0),
+    ],
+    "gridPower": [
+        ("clamp_neg", ("aPhaseMainsPower", "bPhaseMainsPower", "cPhaseMainsPower"), 1.0),
+    ],
+    "feedInPower": [
+        ("clamp_pos", ("aPhaseMainsPower", "bPhaseMainsPower", "cPhaseMainsPower"), 1.0),
+    ],
+    "batteryChargingCurrent": [
+        ("clamp_neg", ("positiveTerminalBatteryCurrent",), 1.0),
+    ],
+    "batteryDischargeCurrent": [
+        ("clamp_pos", ("positiveTerminalBatteryCurrent",), 1.0),
+    ],
 }
 
-# Fields observed in the issue #7 payload that are deliberately NOT mapped.
+# Fields observed in issue #7 payloads that are still deliberately NOT mapped.
 # Publishing a wrong value is worse than leaving a sensor "unknown": a 1000x
 # scaling error feeds the HA Energy dashboard and long-term statistics, and
-# statistics cannot be un-poisoned by a later fix.  Two distinct reasons:
-#
-# 1. UNIT UNCONFIRMED (kW vs W).  Every captured sample was zero because the
-#    reading was taken at night, so the scale cannot be pinned down.  The
-#    reporter labelled these kW, and this integration already applies kW→W to
-#    acOutputActivePower on the time-series path, so x1000 is *probably* right —
-#    but "probably" is not good enough for a value that lands in statistics.
-# 2. DIRECTION UNCONFIRMED.  The battery terminal currents carry the right
-#    magnitude (26.6 V x 0.4 A ~= 9 W, matching the reported batteryPower), but
-#    which terminal means charge and which means discharge is unverified — the
-#    reporter flagged it, and a swap would invert charge/discharge, which is
-#    actively misleading rather than merely absent.
-#
-# Revisit once two captures from issue #7 are available: one in daylight under
-# load (settles the units), one while the battery is actively charging (settles
-# the direction).
+# statistics cannot be un-poisoned by a later fix.
 ENERGY_FLOW_UNVERIFIED: tuple[str, ...] = (
-    # 1. unit unconfirmed (kW vs W)
-    "aPhaseMainsPower",   # candidate for gridPower (sum of the three phases)
-    "bPhaseMainsPower",
-    "cPhaseMainsPower",
-    "generationPower",    # candidate aggregate fallback for pvInputPower
-    "load_power",         # candidate for loadPower / acOutputActivePower
-    "loadPower",
-    # 2. direction unconfirmed (which terminal is charge vs discharge)
-    "positiveTerminalBatteryCurrent",
-    "negativeTerminalBatteryCurrent",
+    "generationPower",    # kW aggregate matching pv1Power+pv2Power exactly on
+                           # every sample so far, but redundant with the
+                           # per-string sum above — no reason to add a second,
+                           # less precise path for the same number.
+    "loadPower",           # camelCase alternate of the confirmed load_power
+                           # key; no capture has shown a device that reports
+                           # this spelling instead, so its unit is unconfirmed.
+    "negativeTerminalBatteryCurrent",  # stayed 0 in every capture on this
+                           # device/firmware; positiveTerminalBatteryCurrent's
+                           # sign already covers both directions, so this
+                           # field has no confirmed use yet.
 )
 
 # Canonical keys that indicate the time-series endpoint returned usable realtime
