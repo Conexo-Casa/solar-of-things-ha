@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.6.0] - 2026-09-15
+
+### Added
+- **AC Output Power, Grid Import Power, Grid Feed-in Power, Battery Charging
+  Current and Battery Discharge Current now populate on devices that use the
+  energy-flow fallback** (the UWB1 / RWB1-0x / JC-62xx / DatouBoss / EASUN
+  family from #7). v2.5.0 shipped only Battery Voltage, State of Charge,
+  Power and PV Input Power from this path because every field needed to
+  confirm the rest — `load_power`'s unit, the mains-power sign convention,
+  and the battery terminal current's charge/discharge direction — had only
+  been captured at night, reading zero. Four daylight captures across every
+  AC/PV/charging combination settled all three: `load_power` and the mains
+  fields carry their own `"unit"` tag in the payload (kW and W
+  respectively, not guessed), and the mains-power sign checks out against
+  simple load-minus-generation arithmetic in every AC-connected sample.
+  Thanks to @hidemichixt-creator for the four-state capture set (#7).
+
+### Notes
+- Grid Feed-in Power's positive-value (exporting) case is inferred from the
+  same signed field as Grid Import Power by physical symmetry, not yet
+  observed directly — no capture so far has shown the device actually
+  exporting. If it reads wrong on a grid-tied system, please reopen #7 with
+  a capture taken while exporting.
+
 ## [2.5.1] - 2026-09-14
 
 ### Fixed
