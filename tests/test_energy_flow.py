@@ -16,6 +16,7 @@ from __future__ import annotations
 import pytest
 
 from custom_components.solar_of_things.api import (
+    EnergyFlowRuleNotConfiguredError,
     SolarOfThingsAPI,
     TokenExpiredError,
     has_realtime_values,
@@ -364,6 +365,24 @@ def test_token_expiry_propagates_for_reauth(api_factory) -> None:
     api, _ = api_factory({}, flow_error=TokenExpiredError("expired"))
     with pytest.raises(TokenExpiredError):
         api.fetch_latest_data("device-6")
+
+
+def test_energy_flow_rule_not_configured_logs_a_warning(api_factory, caplog) -> None:
+    """Issue #21: this failure mode looked identical to "no data" — no
+    sensors AND no warning — because it fell into the same silent DEBUG-level
+    except clause as an unsupported/404 endpoint. It must be loud by default,
+    since the fix (configuring an energy-flow rule on the portal) is on the
+    user/installer's side, not something a future field mapping can resolve.
+    """
+    api, _ = api_factory(
+        {}, flow_error=EnergyFlowRuleNotConfiguredError("code=70132 message=Energy flow rule not exists")
+    )
+    with caplog.at_level("WARNING"):
+        result = api.fetch_latest_data("device-8")
+
+    assert isinstance(result, dict)  # still degrades quietly, not a raised error
+    assert any(record.levelname == "WARNING" for record in caplog.records)
+    assert "energy-flow rule" in caplog.text.lower()
 
 
 def test_unknown_firmware_logs_field_names_for_reporting(api_factory, caplog) -> None:
