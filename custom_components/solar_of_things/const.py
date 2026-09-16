@@ -119,9 +119,13 @@ SENSOR_KEYS = [
 #                              batteryPower − pv1Power reproduces
 #                              |aPhaseMainsPower| to within rounding in both
 #                              AC-connected samples (e.g. 614+720−234=1100 W).
-#                              Negative = importing from mains; positive would
-#                              be feed-in by the same physical symmetry (not
-#                              yet directly observed — no sample went positive).
+#                              Negative = importing from mains, positive =
+#                              feeding in — confirmed directly (not just by
+#                              symmetry) by a follow-up capture with the
+#                              battery full and PV surplus flowing out
+#                              (897 W PV, 0 W battery, 351 W load ->
+#                              +495 W on aPhaseMainsPower, the ~50 W gap
+#                              being ordinary inverter conversion loss).
 #     positiveTerminalBatteryCurrent   Sign flips consistently across all four
 #                              states: negative while charging (-17.6, -27 A),
 #                              positive while discharging (+25.5, +17.6 A).

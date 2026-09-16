@@ -71,6 +71,23 @@ ISSUE_7_NOAC_PV_DISCHARGING = {
     "bmsSOC": 54,
 }
 
+# Trimmed from UPS_AC_PV_GridFeeding.txt (issue #7, 2026-09-16): the capture
+# hidemichixt-creator took specifically to settle the positive/exporting case
+# left unconfirmed in v2.6.1 — PV surplus after a full battery is being fed
+# back to the grid.
+ISSUE_7_GRID_FEEDING = {
+    "pv1Power": 897,
+    "pv2Power": 0,
+    "load_power": 0.351,
+    "aPhaseMainsPower": 495,
+    "bPhaseMainsPower": 0,
+    "cPhaseMainsPower": 0,
+    "positiveTerminalBatteryCurrent": 0,
+    "negativeTerminalBatteryCurrent": 0,
+    "batteryPower": 0,  # battery full (96% SOC), neither charging nor discharging
+    "bmsSOC": 96,
+}
+
 
 # ─── Pure mapping ──────────────────────────────────────────────────────────────
 
@@ -115,6 +132,20 @@ def test_grid_import_and_feed_in_split_from_signed_mains_power() -> None:
     mapped_no_ac = map_energy_flow_fields(ISSUE_7_NOAC_PV_DISCHARGING)
     assert mapped_no_ac["gridPower"] == 0.0
     assert mapped_no_ac["feedInPower"] == 0.0
+
+
+def test_feed_in_power_positive_case_confirmed_by_direct_export_capture() -> None:
+    """v2.6.1 shipped Grid Feed-in Power's positive/exporting case inferred
+    only by symmetry — no capture had shown a device actually exporting.
+    hidemichixt-creator's follow-up capture (issue #7, 2026-09-16) settles it:
+    PV surplus (897 W) after a full battery (0 W charge/discharge) with a
+    351 W load leaves ~546 W to go somewhere, and aPhaseMainsPower reads
+    +495 W (the ~50 W gap is ordinary inverter conversion loss) — positive
+    really does mean exporting, matching the prediction exactly.
+    """
+    mapped = map_energy_flow_fields(ISSUE_7_GRID_FEEDING)
+    assert mapped["feedInPower"] == 495.0
+    assert mapped["gridPower"] == 0.0  # not importing while exporting
 
 
 def test_battery_charging_and_discharge_current_split_by_sign() -> None:

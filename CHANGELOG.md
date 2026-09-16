@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.7.1] - 2026-09-16
+
+### Notes
+- **Grid Feed-in Power's exporting case is now directly confirmed**, not just
+  inferred by symmetry. v2.6.1 shipped it without a capture of a device
+  actually exporting; hidemichixt-creator's follow-up capture (#7) has a full
+  battery and PV surplus flowing out (897 W PV, 0 W battery, 351 W load),
+  and `aPhaseMainsPower` reads +495 W — positive really does mean feeding
+  into the grid. No code change; this closes out the caveat from the
+  previous release.
+
 ## [2.7.0] - 2026-09-15
 
 ### Fixed
