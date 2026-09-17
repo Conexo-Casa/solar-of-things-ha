@@ -79,7 +79,7 @@ SENSOR_KEYS = [
     "batteryVoltage",
     "feedInPower",
     "batteryPower",
-    "batterySOC",
+    "batteryCapacity",
     "gridPower",
     "loadPower",
 ]
@@ -144,7 +144,7 @@ ENERGY_FLOW_RULES: dict[str, list[tuple[str, tuple[str, ...], float]]] = {
     "batteryVoltage": [
         ("first", ("bmsBatteryVoltage", "positiveTerminalBatteryVoltage"), 1.0),
     ],
-    "batterySOC": [
+    "batteryCapacity": [
         ("first", ("batteryPercentage", "bmsSOC"), 1.0),
     ],
     "batteryPower": [
@@ -191,7 +191,7 @@ REALTIME_PROBE_KEYS: tuple[str, ...] = (
     "pvInputPower",
     "acOutputActivePower",
     "batteryVoltage",
-    "batterySOC",
+    "batteryCapacity",
     "batteryChargingCurrent",
     "batteryDischargeCurrent",
     "feedInPower",
@@ -234,7 +234,7 @@ SENSOR_DEFINITIONS = {
         "device_class": "power",
         "icon": "mdi:battery-charging",
     },
-    "batterySOC": {
+    "batteryCapacity": {
         "name": "Battery State of Charge",
         "unit": "%",
         "device_class": "battery",

@@ -28,7 +28,7 @@ _TRANSLATION_KEYS: dict[str, str] = {
     "batteryChargingCurrent": "battery_charging_current",
     "batteryVoltage": "battery_voltage",
     "batteryPower": "battery_power",
-    "batterySOC": "battery_soc",
+    "batteryCapacity": "battery_soc",
     "feedInPower": "feed_in_power",
     "gridPower": "grid_power",
     "loadPower": "load_power",

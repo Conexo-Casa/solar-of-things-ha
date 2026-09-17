@@ -824,7 +824,7 @@ class SolarOfThingsAPI:
         ALIAS_GROUPS = [
             ("pvInputPower", "pvPower"),
             ("acOutputActivePower", "outputActivePower"),
-            ("batterySOC", "batteryCapacity"),
+            ("batteryCapacity", "batteryCapacity"),
         ]
 
         keys = [
@@ -836,7 +836,7 @@ class SolarOfThingsAPI:
             "batteryChargingCurrent",
             "batteryVoltage",
             "feedInPower",
-            "batterySOC",
+            "batteryCapacity",
             "batteryCapacity",
         ]
 
@@ -866,7 +866,7 @@ class SolarOfThingsAPI:
                 latest_values[key] = arr[-1]
 
         # Some inverter models (e.g. Siseli HPVINV02) report pvInputPower,
-        # acOutputActivePower and batterySOC under an alternate key name
+        # acOutputActivePower and batteryCapacity under an alternate key name
         # instead of the documented one. Prefer the canonical key when the
         # device populates it; fall back to the alternate otherwise.
         aliased_keys: set[str] = set()
