@@ -166,6 +166,28 @@ ENERGY_FLOW_RULES: dict[str, list[tuple[str, tuple[str, ...], float]]] = {
     "feedInPower": [
         ("clamp_pos", ("aPhaseMainsPower", "bPhaseMainsPower", "cPhaseMainsPower"), 1.0),
     ],
+    "acInputVoltage": [
+        ("first", ("acInputVoltage", "acVoltage", "gridVoltage"), 1.0),
+    ],
+    "acInputFrequency": [
+        ("first", ("acInputFrequency", "gridFrequency"), 1.0),
+    ],
+    "pvInputVoltage": [
+        ("first", ("pv1Voltage", "pvInputVoltage"), 1.0),
+    ],
+    "outputVoltage": [
+        ("first", ("acOutputVoltage", "outputVoltage", "inverterVoltage"), 1.0),
+    ],
+    "outputFrequency": [
+        ("first", ("acOutputFrequency", "outputFrequency", "inverterFrequency"), 1.0),
+    ],
+    "outputApparentPower": [
+        ("first", ("acOutputApparentPower", "outputApparentPower"), 1.0),
+    ],
+    "loadPercentage": [
+        ("first", ("loadPercentage", "outputLoadPercent"), 1.0),
+    ],
+
     "batteryChargingCurrent": [
         ("clamp_neg", ("positiveTerminalBatteryCurrent",), 1.0),
     ],

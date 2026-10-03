@@ -838,6 +838,13 @@ class SolarOfThingsAPI:
             "feedInPower",
             "batterySOC",
             "batteryCapacity",
+            "acInputVoltage",
+            "acInputFrequency",
+            "pvInputVoltage",
+            "outputVoltage",
+            "outputFrequency",
+            "outputApparentPower",
+            "loadPercentage",
         ]
 
         request_body = {
