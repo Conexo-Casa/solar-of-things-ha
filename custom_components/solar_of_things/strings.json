@@ -132,6 +132,27 @@
       },
       "monthly_solar_percentage": {
         "name": "Monthly Solar Coverage"
+      },
+      "ac_input_voltage": {
+        "name": "AC Input Voltage"
+      },
+      "ac_input_frequency": {
+        "name": "AC Input Frequency"
+      },
+      "pv_input_voltage": {
+        "name": "PV Input Voltage"
+      },
+      "output_voltage": {
+        "name": "AC Output Voltage"
+      },
+      "output_frequency": {
+        "name": "AC Output Frequency"
+      },
+      "output_apparent_power": {
+        "name": "AC Output Apparent Power"
+      },
+      "load_percentage": {
+        "name": "Load Percentage"
       }
     }
   }
