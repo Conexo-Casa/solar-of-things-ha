@@ -151,7 +151,9 @@ def test_complete_time_series_makes_no_extra_call(api_factory) -> None:
     full = {k: [1.0] for k in missing_realtime_keys({})}
     api, calls = api_factory(full, _flow(ISSUE_37_FLOW))
     api.fetch_latest_data("dev-full")
-    assert calls["energy_flow"] == 0
+    api.fetch_latest_data("dev-full")
+    # Only the one-time AC-output unit lookup (#42); no per-poll fallback.
+    assert calls["energy_flow"] == 1
 
 
 # ── #35 ───────────────────────────────────────────────────────────────────────
