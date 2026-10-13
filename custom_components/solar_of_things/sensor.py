@@ -16,6 +16,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .device import inverter_device_info
 from .const import DOMAIN, SENSOR_DEFINITIONS
 
 _LOGGER = logging.getLogger(__name__)
@@ -143,13 +144,14 @@ class SolarOfThingsDeviceSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, self._device_id)},
-            "name": self._device_name,
-            "manufacturer": "Siseli",
-            "model": (self.coordinator.data.get("device_meta") or {}).get("model") if self.coordinator.data else None,
-            "via_device": (DOMAIN, self._station_id),
-        }
+        return inverter_device_info(
+            self.hass,
+            self.platform.config_entry.entry_id if self.platform and self.platform.config_entry else None,
+            self._station_id,
+            self._device_id,
+            self._device_name,
+            (self.coordinator.data.get("device_meta") or {}).get("model") if self.coordinator.data else None,
+        )
 
     @property
     def native_value(self):

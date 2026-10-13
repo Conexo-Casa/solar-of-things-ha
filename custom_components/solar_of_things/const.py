@@ -132,32 +132,68 @@ SENSOR_KEYS = [
 #                              negativeTerminalBatteryCurrent stayed 0 in every
 #                              sample on this device/firmware and is still
 #                              unused — see ENERGY_FLOW_UNVERIFIED.
+#
+# Second firmware family — SRNE-based units (DatouBoss 4863U / protocol
+# JI4649841 in #37, same 104-field payload as the Maniy 11 kW in #32),
+# confirmed by aogden24-byte against the inverter's own RS485 registers:
+# PV1+PV2 0.493+0.416 kW = portal Generation Power 0.909 kW; load 387 W.
+#     pv1RealTimePower / pv2RealTimePower   kW  ("PV1/PV2 Real Time Power (kW)")
+#     loadPower                              W   ("Load Power (W)")
+#     mainsInputRealTimePower                W, unsigned (import only)
+#     batteryCapacity                        %
+#     lithiumBatteryVoltage                  V
+#
+# Unit-tagged fields (#9 Victor 19.2, #24 Powmr MEGA-ECO, #35 EASUN RWB1-04):
+# the SAME key ships in different units on different models —
+# acOutputActivePower is kW on the Victor but W on MEGA-ECO; pvInputPower is
+# W on the Victor but kW on MEGA-ECO. A fixed scale is guaranteed wrong for
+# one of them, so those rules use scale=None: the value is mapped only when
+# the payload's own "unit" tag says W or kW, and stays unknown otherwise.
+# Rules with a fixed scale still honour a W/kW tag when one is present.
+#
+# GridPower (capital G, #24 MEGA-ECO) is signed the OPPOSITE way to
+# aPhaseMainsPower: negative = exporting, positive = importing (the
+# reporter's patched output: -414 W raw → 0 W import, 414 W feed-in).
+#
 # Rule modes: "first" (first present source wins), "sum" (add every present
-# source), "clamp_pos" (sum, then max(0, total) — the positive/export half of
-# a signed field), "clamp_neg" (sum, then max(0, -total) — the negative/import
-# half). `scale` converts the source value into the unit declared in
-# SENSOR_DEFINITIONS.
-ENERGY_FLOW_RULES: dict[str, list[tuple[str, tuple[str, ...], float]]] = {
+# source), "clamp_pos" (sum, then max(0, total) — the positive half of
+# a signed field), "clamp_neg" (sum, then max(0, -total) — the negative
+# half, flipped). `scale` converts the source value into the unit declared in
+# SENSOR_DEFINITIONS; None = "map only when a W/kW unit tag is present".
+ENERGY_FLOW_RULES: dict[str, list[tuple[str, tuple[str, ...], float | None]]] = {
     "pvInputPower": [
         ("sum", ("pv1Power", "pv2Power", "pv3Power", "pv4Power"), 1.0),
+        ("sum", ("pv1RealTimePower", "pv2RealTimePower"), 1000.0),
+        ("sum", ("pvInputPower", "pv2InputPower"), None),
+        ("first", ("generationPower",), None),
     ],
     "batteryVoltage": [
-        ("first", ("bmsBatteryVoltage", "positiveTerminalBatteryVoltage"), 1.0),
+        ("first", (
+            "bmsBatteryVoltage",
+            "positiveTerminalBatteryVoltage",
+            "batteryVoltage",
+            "lithiumBatteryVoltage",
+        ), 1.0),
     ],
     "batterySOC": [
-        ("first", ("batteryPercentage", "bmsSOC"), 1.0),
+        ("first", ("batteryPercentage", "bmsSOC", "batteryCapacity"), 1.0),
     ],
     "batteryPower": [
         ("first", ("batteryPower",), 1.0),
     ],
     "acOutputActivePower": [
         ("sum", ("load_power",), 1000.0),
+        ("first", ("loadPower",), 1.0),
+        ("first", ("acOutputActivePower",), None),
     ],
     "gridPower": [
         ("clamp_neg", ("aPhaseMainsPower", "bPhaseMainsPower", "cPhaseMainsPower"), 1.0),
+        ("first", ("mainsInputRealTimePower",), 1.0),
+        ("clamp_pos", ("GridPower",), 1.0),
     ],
     "feedInPower": [
         ("clamp_pos", ("aPhaseMainsPower", "bPhaseMainsPower", "cPhaseMainsPower"), 1.0),
+        ("clamp_neg", ("GridPower",), 1.0),
     ],
     "batteryChargingCurrent": [
         ("clamp_neg", ("positiveTerminalBatteryCurrent",), 1.0),
@@ -172,21 +208,16 @@ ENERGY_FLOW_RULES: dict[str, list[tuple[str, tuple[str, ...], float]]] = {
 # scaling error feeds the HA Energy dashboard and long-term statistics, and
 # statistics cannot be un-poisoned by a later fix.
 ENERGY_FLOW_UNVERIFIED: tuple[str, ...] = (
-    "generationPower",    # kW aggregate matching pv1Power+pv2Power exactly on
-                           # every sample so far, but redundant with the
-                           # per-string sum above — no reason to add a second,
-                           # less precise path for the same number.
-    "loadPower",           # camelCase alternate of the confirmed load_power
-                           # key; no capture has shown a device that reports
-                           # this spelling instead, so its unit is unconfirmed.
     "negativeTerminalBatteryCurrent",  # stayed 0 in every capture on this
                            # device/firmware; positiveTerminalBatteryCurrent's
                            # sign already covers both directions, so this
                            # field has no confirmed use yet.
 )
 
-# Canonical keys that indicate the time-series endpoint returned usable realtime
-# data.  If none of these are present the energy-flow fallback is attempted.
+# Canonical keys the time-series endpoint is expected to fill.  If ANY of them
+# is missing the energy-flow fallback runs and fills only the gaps — some
+# firmware populates the battery keys but none of the power keys (#35, #37),
+# and the old "all missing" test skipped the fallback for exactly those.
 REALTIME_PROBE_KEYS: tuple[str, ...] = (
     "pvInputPower",
     "acOutputActivePower",
