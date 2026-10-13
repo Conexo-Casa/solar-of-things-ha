@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.8.2] - 2026-10-13
+
+### Fixed
+- AC Output, Load and Grid Import Power no longer read 1000× too high on devices that report `acOutputActivePower` in W (Datouboss JC-5052 / JC-50521 dongle, #42). The unit is now taken from the device's own energy-flow unit tag; devices reporting kW, or without a tag, are unchanged.
+
 ## [2.8.1] - 2026-10-12
 
 ### Fixed
