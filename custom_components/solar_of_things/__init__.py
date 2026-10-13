@@ -177,11 +177,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "devices": devices,
     }
 
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-
-    # Explicitly register the station hub device so that per-device entities
-    # can reference it via via_device without triggering the
-    # "non existing via_device" warning introduced in HA 2025.12.
+    # Register the station hub device BEFORE the platforms are forwarded, so
+    # per-device entities can resolve its registry id for via_device_id
+    # (the via_device tuple is deprecated since HA 2026.8 — #34, #37).
     dev_reg = dr.async_get(hass)
     dev_reg.async_get_or_create(
         config_entry_id=entry.entry_id,
@@ -190,6 +188,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         manufacturer="Siseli",
         model="Station",
     )
+
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     return True
 

@@ -190,11 +190,10 @@ def test_multi_string_pv_is_summed_at_face_value() -> None:
     assert "loadPower" not in mapped
 
 
-def test_generation_power_is_not_used_as_a_pv_fallback() -> None:
-    """generationPower is an aggregate in kW and its x1000 is unconfirmed.
+def test_untagged_generation_power_is_not_used_as_a_pv_fallback() -> None:
+    """An UNTAGGED generationPower is never mapped — its unit is unknowable.
 
-    Excluding it means a device reporting ONLY generationPower gets an unknown
-    PV sensor rather than one that may be 1000x wrong.
+    (A unit-tagged one is mapped since #35; see test_issues_32_35_37.py.)
     """
     assert map_energy_flow_fields({"generationPower": 2.4}) == {}
     # A per-string reading is still mapped when one is present.
@@ -375,11 +374,13 @@ def test_measured_battery_power_is_not_overwritten_by_the_estimate(api_factory) 
 
 
 def test_time_series_values_win_over_the_fallback(api_factory) -> None:
+    """A partial time-series now consults the fallback (#35, #37) — but only
+    to fill gaps; a value the time-series did return is never replaced."""
     api, calls = api_factory({"batterySOC": [42]}, flow_fields={"bmsSOC": 99})
     result = api.fetch_latest_data("device-4")
 
     assert result["batterySOC"] == 42
-    assert calls["energy_flow"] == 0
+    assert calls["energy_flow"] == 1
 
 
 def test_flow_endpoint_failure_degrades_quietly(api_factory) -> None:

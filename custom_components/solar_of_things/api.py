@@ -262,6 +262,52 @@ def _coerce_number(value: Any) -> float | None:
     return None
 
 
+# Power unit tags the energy-flow payload attaches to a field, and the factor
+# that converts each into W (the unit every power sensor declares).
+_POWER_UNIT_SCALE: dict[str, float] = {"w": 1.0, "kw": 1000.0}
+
+
+def _scaled_number(raw: Any, scale: float | None) -> float | None:
+    """Coerce one energy-flow field and convert it into the sensor's unit.
+
+    A W/kW ``unit`` tag on the field itself always wins over the rule's
+    table scale — several models ship the same key in different units (#24),
+    and the payload's own tag is the only thing that is never wrong about it.
+    ``scale=None`` marks a rule that is ONLY safe with such a tag: an untagged
+    value is skipped rather than guessed.
+    """
+    number = _coerce_number(raw)
+    if number is None:
+        return None
+    unit = raw.get("unit") if isinstance(raw, dict) else None
+    if isinstance(unit, str) and unit.strip().lower() in _POWER_UNIT_SCALE:
+        return number * _POWER_UNIT_SCALE[unit.strip().lower()]
+    if scale is None:
+        return None
+    return number * scale
+
+
+def _flatten_flow_cards(payload: dict[str, Any], fields: dict[str, Any]) -> dict[str, Any]:
+    """Merge the per-flow summary cards into the flat ``fields`` mapping.
+
+    Some firmware (EASUN RWB1-04, #35) only reports PV power on the
+    ``pvPanelFlow`` card — {"key": "generationPower", "value": {"unit": "kW",
+    "value": 0.356}} — and never in ``deviceAttributeState.fields``.  Cards
+    only fill keys the flat mapping lacks.
+    """
+    merged = dict(fields)
+    for card_name, card in payload.items():
+        if not card_name.endswith("Flow") or not isinstance(card, dict):
+            continue
+        value = card.get("value")
+        if not isinstance(value, dict):
+            continue
+        key = card.get("key") or value.get("key")
+        if isinstance(key, str) and key and merged.get(key) is None:
+            merged[key] = value
+    return merged
+
+
 def map_energy_flow_fields(fields: Any) -> dict[str, float]:
     """Translate an energy-flow ``fields`` mapping into canonical sensor keys.
 
@@ -281,10 +327,10 @@ def map_energy_flow_fields(fields: Any) -> dict[str, float]:
                 values = [
                     number
                     for source in sources
-                    if (number := _coerce_number(fields.get(source))) is not None
+                    if (number := _scaled_number(fields.get(source), scale)) is not None
                 ]
                 if values:
-                    total = sum(values) * scale
+                    total = sum(values)
                     if mode == "clamp_pos":
                         # Positive/export half of a signed field (e.g. mains
                         # power going positive = feeding back to the grid).
@@ -297,9 +343,9 @@ def map_energy_flow_fields(fields: Any) -> dict[str, float]:
                     mapped[canonical] = total
             else:  # "first" — first present source field wins
                 for source in sources:
-                    number = _coerce_number(fields.get(source))
+                    number = _scaled_number(fields.get(source), scale)
                     if number is not None:
-                        mapped[canonical] = number * scale
+                        mapped[canonical] = number
                         break
             if canonical in mapped:
                 break
@@ -337,6 +383,15 @@ def has_realtime_values(values: Any) -> bool:
     return any(
         _coerce_number(values.get(key)) is not None for key in REALTIME_PROBE_KEYS
     )
+
+
+def missing_realtime_keys(values: Any) -> list[str]:
+    """Return the canonical realtime keys that carry no usable number."""
+    if not isinstance(values, dict):
+        return list(REALTIME_PROBE_KEYS)
+    return [
+        key for key in REALTIME_PROBE_KEYS if _coerce_number(values.get(key)) is None
+    ]
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -754,11 +809,22 @@ class SolarOfThingsAPI:
         """
         latest_values = self._fetch_time_series_values(device_id)
 
-        if not has_realtime_values(latest_values):
+        missing = missing_realtime_keys(latest_values)
+        # The loud diagnostics below are for devices with NO realtime data at
+        # all.  A working device that merely lacks one key (an off-grid unit
+        # never reporting feed-in) now also reaches the fallback, and must
+        # not get a WARNING every poll for it.
+        partial = has_realtime_values(latest_values)
+        diag_level = logging.DEBUG if partial else logging.WARNING
+        if missing:
+            # Any gap, not only "everything missing": some firmware fills the
+            # battery keys but none of the power keys (#35, #37), and the old
+            # all-or-nothing test never ran the fallback for those.
             _LOGGER.debug(
-                "SolarOfThings device %s: time-series returned no realtime "
-                "values; trying energy-flow fallback",
+                "SolarOfThings device %s: time-series missing %s; "
+                "trying energy-flow fallback",
                 device_id,
+                missing,
             )
             try:
                 fields = self.fetch_energy_flow(device_id)
@@ -769,7 +835,8 @@ class SolarOfThingsAPI:
                 # A portal-side setup gap, not something a field mapping can
                 # fix — but "no sensors, no warnings" (issue #21) looked
                 # identical to a bug, so this needs to be loud by default.
-                _LOGGER.warning(
+                _LOGGER.log(
+                    diag_level,
                     "SolarOfThings device %s: no energy-flow rule is configured "
                     "for this device in the Siseli portal (%s). Realtime sensors "
                     "will stay unavailable until an energy-flow rule is set up "
@@ -793,12 +860,16 @@ class SolarOfThingsAPI:
                         sorted(mapped),
                     )
                     # Only fill gaps — never clobber a time-series reading.
+                    # A key the time-series returned as None is a gap too
+                    # (#35): setdefault() would have kept the None.
                     for key, value in mapped.items():
-                        latest_values.setdefault(key, value)
+                        if _coerce_number(latest_values.get(key)) is None:
+                            latest_values[key] = value
                 elif fields:
                     # Unknown firmware variant: surface the field names so they
                     # can be added to ENERGY_FLOW_RULES from a bug report.
-                    _LOGGER.warning(
+                    _LOGGER.log(
+                        diag_level,
                         "SolarOfThings device %s: energy-flow returned %d field(s) "
                         "but none matched a known mapping. Please open an issue "
                         "with these key names: %s",
@@ -913,12 +984,16 @@ class SolarOfThingsAPI:
             raise RuntimeError(f"Energy-flow error code={code} message={message}")
 
         payload = data.get("data") or {}
+        if not isinstance(payload, dict):
+            return {}
         state = payload.get("deviceAttributeState") or {}
-        fields = state.get("fields")
+        fields = state.get("fields") if isinstance(state, dict) else None
         if not isinstance(fields, dict):
             # Tolerate the values being nested directly under data.fields.
             fields = payload.get("fields")
-        return fields if isinstance(fields, dict) else {}
+        if not isinstance(fields, dict):
+            fields = {}
+        return _flatten_flow_cards(payload, fields)
 
     @staticmethod
     def _apply_derived_values(latest_values: dict[str, Any]) -> None:

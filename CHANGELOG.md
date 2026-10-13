@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.8.0] - 2026-10-12
+
+### Fixed
+- **PV Input Power, AC Output Power and grid sensors stayed unknown when the
+  time-series endpoint was only partly populated** (#35, #37). The
+  energy-flow fallback ran only when *no* realtime key was present; firmware
+  that reports battery keys but no power keys never reached it, and Load
+  Power then read 0 W while battery discharge was reported as Grid Import.
+  The fallback now runs whenever any realtime key is missing, and fills keys
+  the time-series returned as `None`. It never overrides a real reading.
+- **PV power reported only on the `pvPanelFlow` card** (EASUN RWB1-04, #35)
+  is now read.
+- **Deprecated `via_device` warning on HA 2026.10** (#34, #37). Inverter
+  devices now link to the station hub with `via_device_id`; the old key stops
+  working in HA 2027.8. HA releases before 2026.8 keep the old behaviour.
+
+### Added
+- **SRNE-family energy-flow mappings** (DatouBoss 4863U #37, same payload as
+  the Maniy 11 kW in #32): `pv1RealTimePower` + `pv2RealTimePower` (kW),
+  `loadPower` (W), `mainsInputRealTimePower` (W, import), `batteryCapacity`,
+  `lithiumBatteryVoltage` — units confirmed against the inverter's RS485
+  registers.
+- **Unit-tag-aware mapping.** When a field carries its own `W`/`kW` unit tag
+  it now wins over the table scale. Keys whose unit differs by model
+  (`acOutputActivePower`, `pvInputPower`, `pv2InputPower`, `generationPower`
+  — #9, #24) are mapped **only** when tagged; untagged values stay unknown
+  rather than risk a 1000x error. Signed `GridPower` (#24) is split into
+  Grid Import / Feed-in.
+
+### Changed
+- Devices that already have some realtime data and merely lack one key log
+  the fallback diagnostics at DEBUG instead of WARNING on every poll.
+
 ## [2.7.1] - 2026-09-16
 
 ### Notes
