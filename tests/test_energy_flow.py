@@ -295,8 +295,11 @@ def test_working_device_is_unaffected(api_factory) -> None:
     assert result["batteryPower"] == 104.0             # (2.0 - 0.0) * 52.0
     assert result["gridPower"] == 1204.0               # max(0, 1200-100+104+0)
     assert result["loadPower"] == 1200.0
-    # The fallback must cost a working install nothing.
-    assert calls["energy_flow"] == 0
+    # One energy-flow call learns the AC-output unit (#42); after that the
+    # fallback must cost a working install nothing.
+    assert calls["energy_flow"] == 1
+    api.fetch_latest_data("device-1")
+    assert calls["energy_flow"] == 1
 
 
 def test_hpvinv02_alternate_key_names_are_mapped_to_canonical(api_factory) -> None:
@@ -327,7 +330,7 @@ def test_hpvinv02_alternate_key_names_are_mapped_to_canonical(api_factory) -> No
     # Derived values still come from the shared _apply_derived_values path.
     assert result["batteryPower"] == 104.0          # (2.0 - 0.0) * 52.0
     assert result["loadPower"] == 1100.0
-    assert calls["energy_flow"] == 0
+    assert calls["energy_flow"] == 1   # one-time AC-output unit lookup (#42)
 
 
 def test_documented_keys_win_when_a_device_reports_both(api_factory) -> None:

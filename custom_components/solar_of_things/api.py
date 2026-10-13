@@ -442,6 +442,10 @@ class SolarOfThingsAPI:
         # Thread-safety for concurrent refresh calls
         self._refresh_lock = threading.Lock()
 
+        # Per-device W-per-unit factor for the time-series acOutputActivePower,
+        # learned once from the energy-flow payload's own unit tag (#42).
+        self._ac_output_scale: dict[str, float] = {}
+
         # Determine auth mode
         if user_id and password:
             self._auth_mode = "password"
@@ -966,7 +970,11 @@ class SolarOfThingsAPI:
                 if pv2 is not None:
                     latest_values["pvInputPower"] = pv1 + pv2
 
-        # Unit normalisation: acOutputActivePower is always kW in API → W.
+        # Unit normalisation: acOutputActivePower → W.  The time-series
+        # endpoint sends bare numbers with no unit tag, and the key is kW on
+        # most firmware but already W on others (Datouboss JC-5052, #42), so
+        # the factor comes from the device's tagged energy-flow payload; kW is
+        # assumed only when that tag is unavailable (the historic behaviour).
         # pvInputPower is W under the documented key on every device this
         # integration already supports (pinned by
         # test_working_device_is_unaffected) but kW when it arrived via the
@@ -975,7 +983,9 @@ class SolarOfThingsAPI:
         if "acOutputActivePower" in latest_values:
             converted = _coerce_number(latest_values["acOutputActivePower"])
             if converted is not None:
-                latest_values["acOutputActivePower"] = converted * 1000.0
+                latest_values["acOutputActivePower"] = (
+                    converted * self._ac_output_unit_scale(device_id)
+                )
 
         if "pvInputPower" in aliased_keys:
             converted = _coerce_number(latest_values["pvInputPower"])
@@ -983,6 +993,33 @@ class SolarOfThingsAPI:
                 latest_values["pvInputPower"] = converted * 1000.0
 
         return latest_values
+
+    def _ac_output_unit_scale(self, device_id: str) -> float:
+        """Return the factor that turns time-series acOutputActivePower into W.
+
+        Looked up once per device from the energy-flow payload's ``unit`` tag
+        for the same key ("W" on the JC-5052 in #42, "kW" on the Gospower in
+        #41).  Without a usable tag the historic kW assumption is kept, so
+        devices that were already correct are unaffected.  A transport error
+        is not cached, so the lookup is retried on the next poll.
+        """
+        cached = self._ac_output_scale.get(device_id)
+        if cached is not None:
+            return cached
+        try:
+            self.fetch_energy_flow(device_id)
+        except TokenExpiredError:
+            raise
+        except EnergyFlowRuleNotConfiguredError:
+            self._ac_output_scale[device_id] = 1000.0
+        except Exception as err:  # noqa: BLE001 - diagnostic only
+            _LOGGER.debug(
+                "SolarOfThings device %s: AC output unit lookup failed: %s",
+                device_id,
+                err,
+            )
+            return 1000.0
+        return self._ac_output_scale.setdefault(device_id, 1000.0)
 
     def fetch_energy_flow(self, device_id: str) -> dict[str, Any]:
         """Return the live energy-flow ``fields`` mapping for a device.
@@ -1012,6 +1049,20 @@ class SolarOfThingsAPI:
             fields = payload.get("fields")
         if not isinstance(fields, dict):
             fields = {}
+        # Remember this device's unit for acOutputActivePower (#42).
+        ac_raw = fields.get("acOutputActivePower")
+        unit = ac_raw.get("unit") if isinstance(ac_raw, dict) else None
+        if isinstance(unit, str) and unit.strip().lower() in _POWER_UNIT_SCALE:
+            scale = _POWER_UNIT_SCALE[unit.strip().lower()]
+            if self._ac_output_scale.get(device_id) != scale:
+                _LOGGER.debug(
+                    "SolarOfThings device %s: acOutputActivePower unit is %s",
+                    device_id,
+                    unit,
+                )
+            self._ac_output_scale[device_id] = scale
+        else:
+            self._ac_output_scale.setdefault(device_id, 1000.0)
         return _flatten_flow_cards(payload, fields)
 
     @staticmethod
