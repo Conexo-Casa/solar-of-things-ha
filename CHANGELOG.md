@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.8.1] - 2026-10-12
+
+### Fixed
+- **PV Input Power under-reported on dual-MPPT inverters** (#9). On the
+  Victor 19.2, `pvInputPower` is PV1 only (the portal labels it "PV1 Input
+  Power"); the second string arrives as `pv2InputPower`. PV Input Power is
+  now PV1 + PV2 — confirmed against the portal's own generation total
+  (538 W + 2021 W = 2.559 kW). Single-string devices are unchanged, and the
+  HPVINV02 `pvPower` alias (already a device total) is not double-counted.
+
+### Added
+- **Grid Voltage** sensor (`acInputVoltage`, #36) — reads 0 V when the grid
+  is down, so it can drive "grid present" automations.
+- **PV1 / PV2 Input Power** and **PV1 / PV2 Input Voltage** sensors (#9),
+  on both the time-series and energy-flow paths (SRNE per-string kW fields
+  included).
+
 ## [2.8.0] - 2026-10-12
 
 ### Fixed

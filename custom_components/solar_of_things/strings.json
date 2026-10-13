@@ -121,6 +121,21 @@
       "load_power": {
         "name": "Load Power"
       },
+      "pv1_input_power": {
+        "name": "PV1 Input Power"
+      },
+      "pv2_input_power": {
+        "name": "PV2 Input Power"
+      },
+      "pv1_input_voltage": {
+        "name": "PV1 Input Voltage"
+      },
+      "pv2_input_voltage": {
+        "name": "PV2 Input Voltage"
+      },
+      "ac_input_voltage": {
+        "name": "Grid Voltage"
+      },
       "monthly_pv_generated": {
         "name": "Monthly PV Generated"
       },

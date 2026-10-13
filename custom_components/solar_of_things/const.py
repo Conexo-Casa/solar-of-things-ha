@@ -82,6 +82,11 @@ SENSOR_KEYS = [
     "batterySOC",
     "gridPower",
     "loadPower",
+    "pv1InputPower",
+    "pv2InputPower",
+    "pvInputVoltage",
+    "pv2InputVoltage",
+    "acInputVoltage",
 ]
 
 # ─── Energy-flow fallback mapping ──────────────────────────────────────────────
@@ -195,6 +200,28 @@ ENERGY_FLOW_RULES: dict[str, list[tuple[str, tuple[str, ...], float | None]]] = 
         ("clamp_pos", ("aPhaseMainsPower", "bPhaseMainsPower", "cPhaseMainsPower"), 1.0),
         ("clamp_neg", ("GridPower",), 1.0),
     ],
+    # Per-string PV and grid voltage (#9, #36). Same unit evidence as the
+    # pvInputPower rules above; voltages are V on every capture ("unit": "V"
+    # where tagged — Victor 19.2 in #9, 226.3 / 232.6 V in #9 and PR #29).
+    "pv1InputPower": [
+        ("first", ("pv1Power",), 1.0),
+        ("first", ("pv1RealTimePower",), 1000.0),
+        ("first", ("pvInputPower",), None),
+    ],
+    "pv2InputPower": [
+        ("first", ("pv2Power",), 1.0),
+        ("first", ("pv2RealTimePower",), 1000.0),
+        ("first", ("pv2InputPower",), None),
+    ],
+    "pvInputVoltage": [
+        ("first", ("pvInputVoltage",), 1.0),
+    ],
+    "pv2InputVoltage": [
+        ("first", ("pv2InputVoltage",), 1.0),
+    ],
+    "acInputVoltage": [
+        ("first", ("acInputVoltage",), 1.0),
+    ],
     "batteryChargingCurrent": [
         ("clamp_neg", ("positiveTerminalBatteryCurrent",), 1.0),
     ],
@@ -288,6 +315,36 @@ SENSOR_DEFINITIONS = {
         "unit": "W",
         "device_class": "power",
         "icon": "mdi:home-lightning-bolt",
+    },
+    "pv1InputPower": {
+        "name": "PV1 Input Power",
+        "unit": "W",
+        "device_class": "power",
+        "icon": "mdi:solar-panel",
+    },
+    "pv2InputPower": {
+        "name": "PV2 Input Power",
+        "unit": "W",
+        "device_class": "power",
+        "icon": "mdi:solar-panel",
+    },
+    "pvInputVoltage": {
+        "name": "PV1 Input Voltage",
+        "unit": "V",
+        "device_class": "voltage",
+        "icon": "mdi:solar-panel",
+    },
+    "pv2InputVoltage": {
+        "name": "PV2 Input Voltage",
+        "unit": "V",
+        "device_class": "voltage",
+        "icon": "mdi:solar-panel",
+    },
+    "acInputVoltage": {
+        "name": "Grid Voltage",
+        "unit": "V",
+        "device_class": "voltage",
+        "icon": "mdi:transmission-tower",
     },
     # Monthly summary sensors
     "monthly_pv_generated": {

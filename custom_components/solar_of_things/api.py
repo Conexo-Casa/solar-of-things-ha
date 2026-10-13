@@ -909,6 +909,12 @@ class SolarOfThingsAPI:
             "feedInPower",
             "batterySOC",
             "batteryCapacity",
+            # Per-string PV and grid voltage (#9, #36). Confirmed on the
+            # Victor 19.2 (#9) and in PR #29's time-series capture.
+            "pv2InputPower",
+            "pvInputVoltage",
+            "pv2InputVoltage",
+            "acInputVoltage",
         ]
 
         request_body = {
@@ -946,6 +952,19 @@ class SolarOfThingsAPI:
                 latest_values[canonical] = latest_values[alternate]
                 aliased_keys.add(canonical)
             latest_values.pop(alternate, None)
+
+        # Dual-MPPT firmware (Victor 19.2, #9) reports pvInputPower as PV1
+        # ONLY — the portal labels it "PV1 Input Power" — with the second
+        # string in pv2InputPower, same unit. PV Input Power is the total, so
+        # add PV2 in; keep PV1 as its own sensor. Skipped when PV came from
+        # the pvPower alias, which is already a device total (HPVINV02).
+        if "pvInputPower" not in aliased_keys:
+            pv1 = _coerce_number(latest_values.get("pvInputPower"))
+            if pv1 is not None:
+                latest_values["pv1InputPower"] = pv1
+                pv2 = _coerce_number(latest_values.get("pv2InputPower"))
+                if pv2 is not None:
+                    latest_values["pvInputPower"] = pv1 + pv2
 
         # Unit normalisation: acOutputActivePower is always kW in API → W.
         # pvInputPower is W under the documented key on every device this
