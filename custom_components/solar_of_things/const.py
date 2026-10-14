@@ -60,6 +60,10 @@ API_MONTHLY_SUMMARY = "/apis/stationOverView/stateAttributeSummary/category/year
 API_SETTINGS_GET   = "/apis/remote/device/configs/cache/get"  # ?deviceId=<id>
 API_SETTINGS_SET   = "/apis/remote/device/config/write"       # ?deviceId=<id>
 API_DEVICE_LIST    = "/apis/device/list"
+# Stations on the logged-in account (POST {"page", "count"}); the portal's own
+# JS calls it after login.  Found by the #42 reporter, drives the config-flow
+# station picker (#14).
+API_STATION_LIST   = "/apis/station/list"
 # Live "energy flow" endpoint.  GET with ?deviceId=<id>&dataSource=1; values are
 # returned under data.deviceAttributeState.fields.  Used as a fallback when the
 # historical time-series endpoint yields nothing (see ENERGY_FLOW_RULES below).
@@ -195,6 +199,11 @@ ENERGY_FLOW_RULES: dict[str, list[tuple[str, tuple[str, ...], float | None]]] = 
         ("clamp_neg", ("aPhaseMainsPower", "bPhaseMainsPower", "cPhaseMainsPower"), 1.0),
         ("first", ("mainsInputRealTimePower",), 1.0),
         ("clamp_pos", ("GridPower",), 1.0),
+        # Gospower via RWB1 (#41): measured "AC Input Power", tagged kW
+        # (0 kW with no grid connected, acInputVoltage 0 V).  Tag-only
+        # (scale None) — never guessed when untagged — and clamped to the
+        # import half since no capture shows a negative value.
+        ("clamp_pos", ("acInputPower",), None),
     ],
     "feedInPower": [
         ("clamp_pos", ("aPhaseMainsPower", "bPhaseMainsPower", "cPhaseMainsPower"), 1.0),

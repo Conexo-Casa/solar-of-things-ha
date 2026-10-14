@@ -89,6 +89,7 @@ from .const import (
     API_TIME_SERIES,
     API_MONTHLY_SUMMARY,
     API_DEVICE_LIST,
+    API_STATION_LIST,
     API_SETTINGS_GET,
     API_SETTINGS_SET,
     API_ENERGY_FLOW,
@@ -1074,24 +1075,40 @@ class SolarOfThingsAPI:
         estimate.  On the time-series path none of these keys are ever returned
         by the API, so every one of them is still derived exactly as before.
         """
+        # Battery power is only estimated when ALL three inputs are real
+        # readings.  Treating a missing current as 0 A published a confident
+        # 0 W while the battery was charging at ~800 W (Datouboss JC-5052,
+        # #42: discharge current 0, charging current never reported).  An
+        # unknown sensor is honest; a fabricated 0 W poisons statistics.
         if latest_values.get("batteryPower") is None:
-            voltage = _coerce_number(latest_values.get("batteryVoltage")) or 0.0
-            discharge = _coerce_number(latest_values.get("batteryDischargeCurrent")) or 0.0
-            charge = _coerce_number(latest_values.get("batteryChargingCurrent")) or 0.0
-            latest_values["batteryPower"] = (discharge - charge) * voltage
+            voltage = _coerce_number(latest_values.get("batteryVoltage"))
+            discharge = _coerce_number(latest_values.get("batteryDischargeCurrent"))
+            charge = _coerce_number(latest_values.get("batteryChargingCurrent"))
+            if None not in (voltage, discharge, charge):
+                latest_values["batteryPower"] = (discharge - charge) * voltage
+            else:
+                latest_values["batteryPower"] = None
 
         ac_output = _coerce_number(latest_values.get("acOutputActivePower")) or 0.0
 
         if latest_values.get("loadPower") is None:
             latest_values["loadPower"] = ac_output
 
+        # Same rule for the grid-import estimate: it balances AC output
+        # against PV and battery, so with battery power unknown the result
+        # would be an invented number.  Devices that report a measured grid
+        # value (mains power, or acInputPower — Gospower, #41) never reach
+        # this estimate.
         if latest_values.get("gridPower") is None:
-            pv_power = _coerce_number(latest_values.get("pvInputPower")) or 0.0
-            feed_in = _coerce_number(latest_values.get("feedInPower")) or 0.0
-            battery_power = _coerce_number(latest_values.get("batteryPower")) or 0.0
-            latest_values["gridPower"] = max(
-                0.0, ac_output - pv_power + battery_power + feed_in
-            )
+            battery_power = _coerce_number(latest_values.get("batteryPower"))
+            if battery_power is None:
+                latest_values["gridPower"] = None
+            else:
+                pv_power = _coerce_number(latest_values.get("pvInputPower")) or 0.0
+                feed_in = _coerce_number(latest_values.get("feedInPower")) or 0.0
+                latest_values["gridPower"] = max(
+                    0.0, ac_output - pv_power + battery_power + feed_in
+                )
 
     # ─── Monthly summary (station) ─────────────────────────────────────────────
 
@@ -1299,6 +1316,31 @@ class SolarOfThingsAPI:
         """Set maximum grid charge power (0–5000 W)."""
         key = self._resolve_write_key("gridChargeLimit", settings)
         self._write_setting(device_id, key, watts)
+
+    def list_stations(self) -> list[dict[str, str]]:
+        """Return the account's stations as [{"id": ..., "name": ...}].
+
+        ``POST /apis/station/list`` is what the portal's own JS calls after
+        login; found and verified by the #42 reporter.  Lets the config flow
+        offer a dropdown instead of making users dig the Station ID out of
+        DevTools — the step most of them get wrong (#14, #42: a DTU-ID or
+        serial number entered instead).
+        """
+        data = self._post(API_STATION_LIST, {"page": 1, "count": 50})
+        if data.get("code") not in (0, None, "0"):
+            raise RuntimeError(
+                f"Station list error code={data.get('code')} "
+                f"message={data.get('message')}"
+            )
+        payload = data.get("data") or {}
+        items = payload.get("list") if isinstance(payload, dict) else payload
+        stations: list[dict[str, str]] = []
+        for item in items if isinstance(items, list) else []:
+            if not isinstance(item, dict) or item.get("id") in (None, ""):
+                continue
+            station_id = str(item["id"])
+            stations.append({"id": station_id, "name": str(item.get("name") or station_id)})
+        return stations
 
     def test_connection(self, station_id: str) -> bool:
         """Return True if we can reach the device-list endpoint successfully."""

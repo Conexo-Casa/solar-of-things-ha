@@ -213,7 +213,7 @@ this project, not a fallback.
 1. Open [https://solar.siseli.com](https://solar.siseli.com) and log in.
 2. Note your **User ID** (login account name) and **password**.
 3. Press **F12** → **Network** tab → refresh the page.
-4. Click any request to `solar.siseli.com` and find `stationId` in the **Payload** tab.
+4. *(Optional — the integration can list your stations for you.)* Click any request to `solar.siseli.com` and find `stationId` in the **Payload** tab.
 
 | Value | Where to find it |
 |---|---|
@@ -231,7 +231,7 @@ this project, not a fallback.
    |---|---|---|
    | **User ID** | ✅ | Your Siseli account login name |
    | **Password** | ✅ | Your Siseli account password |
-   | **Station ID** | ✅ | Numeric `stationId` (usually 18 digits) — **not** your inverter or WiFi-dongle serial number |
+   | **Station ID** | Optional | Leave blank — after login your stations are listed to pick from (auto-selected if you have one). If typed: numeric `stationId`, **not** your inverter/dongle serial or DTU-ID |
    | **Device ID** | Optional | Leave blank to auto-discover all devices |
    | **Time zone** | Optional | Default: `Asia/Manila` |
 

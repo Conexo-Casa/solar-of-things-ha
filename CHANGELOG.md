@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.8.3] - 2026-10-14
+
+### Fixed
+- **Battery Power no longer reads a false 0 W** when a battery current is missing (Datouboss JC-5052, #42). It was computed with the missing current as 0 A; it now stays unknown unless voltage and both currents are reported. Grid Import, which is estimated from Battery Power, follows the same rule.
+- **Grid Import uses the measured AC Input Power** when the device reports it with a unit tag (Gospower via RWB1, #41). It previously estimated 90 W with no grid connected.
+- **Time-zone check no longer blocks Home Assistant's event loop** during setup (#14 log). The zone list is now read once, in the executor.
+
+### Added
+- **Station ID is optional** in the User ID + Password setup (#14). After login, your stations are listed to pick from, or selected automatically if there is only one. A typed ID that isn't a station on your account (e.g. a DTU-ID or serial) now opens the picker instead of failing with "Cannot connect". Thanks to @otembajelle for finding `/apis/station/list`.
+
 ## [2.8.2] - 2026-10-13
 
 ### Fixed

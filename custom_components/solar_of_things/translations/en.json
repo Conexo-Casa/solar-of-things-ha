@@ -10,11 +10,11 @@
       },
       "password": {
         "title": "Solar of Things — User ID + Password",
-        "description": "Enter your Siseli portal login credentials and Station ID.\n\n- **User ID**: your account/login name on https://solar.siseli.com (a name, not a number)\n- **Station ID**: the numeric `stationId` found in API request payloads (DevTools → Network). Usually 18 digits, but any length is accepted. This is **not** the serial number printed on your inverter or WiFi dongle.\n- **Device ID**: optional — leave blank to auto-discover all devices under the station\n- **Time zone**: must match your inverter's configured time zone\n\nMore info: {docs_url}",
+        "description": "Enter your Siseli portal login credentials.\n\n- **User ID**: your account/login name on https://solar.siseli.com (a name, not a number)\n- **Station ID**: optional — leave blank and your stations are listed for you after login. If you type one, it is the numeric `stationId` from the portal, **not** the serial number or DTU-ID printed on your inverter or WiFi dongle.\n- **Device ID**: optional — leave blank to auto-discover all devices under the station\n- **Time zone**: must match your inverter's configured time zone\n\nMore info: {docs_url}",
         "data": {
           "user_id": "User ID / Account",
           "password": "Password",
-          "station_id": "Station ID (required)",
+          "station_id": "Station ID (optional — blank to pick from your account)",
           "device_id": "Device ID (optional — blank to auto-discover)",
           "time_zone": "Time zone (full IANA id, e.g. Europe/Warsaw — not just \"Europe\")"
         }
@@ -36,13 +36,22 @@
           "password": "Password",
           "iot_token": "Fresh IOT Token"
         }
+      },
+      "station": {
+        "title": "Choose your station",
+        "description": "These are the stations on your Siseli account. Pick the one to add.",
+        "data": {
+          "station_id": "Station"
+        }
       }
     },
     "error": {
       "cannot_connect": "Cannot connect to the Solar of Things API. Check credentials, Station ID, and network access.",
       "invalid_auth": "Invalid user ID or password. Please try again.",
       "unknown": "Unexpected error. Check Home Assistant logs for details.",
-      "invalid_time_zone": "That's not a valid time zone id. Use a full IANA zone like \"Europe/Warsaw\" or \"America/New_York\" — not a continent or country name."
+      "invalid_time_zone": "That's not a valid time zone id. Use a full IANA zone like \"Europe/Warsaw\" or \"America/New_York\" — not a continent or country name.",
+      "station_not_found": "That Station ID wasn't found on your account (a DTU-ID or serial number is a common mix-up). Pick your station from the list.",
+      "no_stations": "Logged in, but no stations were found on this account. Enter your Station ID manually."
     },
     "abort": {
       "already_configured": "This station is already configured.",
