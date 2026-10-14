@@ -5,6 +5,7 @@ its own.
 """
 from __future__ import annotations
 
+from functools import lru_cache
 from typing import Any
 
 try:
@@ -49,9 +50,23 @@ def is_valid_time_zone(value: str) -> bool:
     on the very first API call, with nothing in the error pointing at time
     zone as the cause. Catching this locally turns that into a same-form
     validation error instead of a cryptic upstream failure during setup.
+
+    Blocking on first call: ``available_timezones()`` walks the zoneinfo
+    tree and imports ``tzdata`` from disk, which HA flags as a blocking call
+    in the event loop (#14 log).  The config flow therefore runs this in the
+    executor; the set is cached so later calls are a cheap lookup.
     """
     if not value:
         return False
-    if available_timezones is None:  # pragma: no cover
+    zones = _cached_timezones()
+    if zones is None:  # pragma: no cover
         return True
-    return value in available_timezones()
+    return value in zones
+
+
+@lru_cache(maxsize=1)
+def _cached_timezones() -> frozenset[str] | None:
+    """Return the zoneinfo key set, read from disk once per process."""
+    if available_timezones is None:  # pragma: no cover
+        return None
+    return frozenset(available_timezones())

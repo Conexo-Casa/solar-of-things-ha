@@ -42,6 +42,52 @@ _LOGGER = logging.getLogger(__name__)
 
 # ─── Validation helpers ────────────────────────────────────────────────────────
 
+async def _async_valid_time_zone(hass: HomeAssistant, value: str) -> bool:
+    """Run the (disk-reading) time-zone check off the event loop (#14 log)."""
+    return await hass.async_add_executor_job(is_valid_time_zone, value)
+
+
+def _token_info(api: SolarOfThingsAPI) -> dict[str, Any]:
+    """Return the token fields persisted on the config entry after login."""
+    return {
+        CONF_IOT_TOKEN: api.access_token,
+        CONF_REFRESH_TOKEN: api.refresh_token,
+        CONF_ACCESS_TOKEN_EXPIRES: api.access_token_expires_iso,
+        CONF_REFRESH_TOKEN_EXPIRES: api.refresh_token_expires_iso,
+    }
+
+
+async def _async_login(hass: HomeAssistant, data: dict[str, Any]) -> SolarOfThingsAPI:
+    """Log in with user-ID/password; map failures onto flow errors."""
+    api = SolarOfThingsAPI(
+        user_id=data[CONF_USER_ID],
+        password=data[CONF_PASSWORD],
+        time_zone=data.get(CONF_TIME_ZONE),
+    )
+    try:
+        await hass.async_add_executor_job(api.login)
+    except AuthenticationError as err:
+        raise InvalidAuth(str(err)) from err
+    except Exception as err:
+        raise CannotConnect(str(err)) from err
+    return api
+
+
+async def _async_list_stations(
+    hass: HomeAssistant, api: SolarOfThingsAPI
+) -> list[dict[str, str]]:
+    """Return the account's stations, or [] if the lookup is unavailable.
+
+    Discovery is a convenience: a failure here must never block a user who
+    typed a valid Station ID by hand, so errors only log at debug.
+    """
+    try:
+        return await hass.async_add_executor_job(api.list_stations)
+    except Exception as err:  # noqa: BLE001 - optional convenience lookup
+        _LOGGER.debug("SolarOfThings: station list unavailable: %s", err)
+        return []
+
+
 async def _validate_password_auth(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
     """Validate user-ID/password auth, return title."""
     api = SolarOfThingsAPI(
@@ -104,6 +150,10 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     def __init__(self) -> None:
         self._auth_mode: str = "password"  # "password" | "token"
+        # Held between the password step and the station picker (#14).
+        self._pending: dict[str, Any] = {}
+        self._token_info: dict[str, Any] = {}
+        self._stations: list[dict[str, str]] = []
 
     # ── Step 1: choose auth mode ───────────────────────────────────────────────
 
@@ -132,7 +182,14 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     # ── Step 2a: user-id + password ────────────────────────────────────────────
 
     async def async_step_password(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        """User-ID + password setup step."""
+        """User-ID + password setup step.
+
+        Station ID is optional (#14): left blank, the account's stations are
+        fetched after login and offered as a dropdown (auto-picked when there
+        is only one).  A typed ID that the device list rejects — usually a
+        DTU-ID or serial number — also falls through to the picker instead
+        of the generic "cannot connect".
+        """
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -140,11 +197,12 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # checked is the same one that gets persisted.
             user_input = normalise_config_fields(user_input)
             time_zone = user_input.get(CONF_TIME_ZONE) or "Asia/Manila"
-            if not is_valid_time_zone(time_zone):
+            user_input[CONF_TIME_ZONE] = time_zone
+            if not await _async_valid_time_zone(self.hass, time_zone):
                 errors["base"] = "invalid_time_zone"
             else:
                 try:
-                    info = await _validate_password_auth(self.hass, user_input)
+                    api = await _async_login(self.hass, user_input)
                 except InvalidAuth:
                     errors["base"] = "invalid_auth"
                 except CannotConnect:
@@ -153,20 +211,26 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     _LOGGER.exception("Unexpected exception in password step")
                     errors["base"] = "unknown"
                 else:
-                    await self.async_set_unique_id(f"station_{user_input[CONF_STATION_ID]}")
-                    self._abort_if_unique_id_configured()
-                    entry_data = {
-                        CONF_USER_ID: user_input[CONF_USER_ID],
-                        CONF_PASSWORD: user_input[CONF_PASSWORD],
-                        CONF_STATION_ID: user_input[CONF_STATION_ID],
-                        CONF_DEVICE_ID: user_input.get(CONF_DEVICE_ID, ""),
-                        CONF_TIME_ZONE: time_zone,
-                        CONF_IOT_TOKEN: info[CONF_IOT_TOKEN],
-                        CONF_REFRESH_TOKEN: info[CONF_REFRESH_TOKEN],
-                        CONF_ACCESS_TOKEN_EXPIRES: info[CONF_ACCESS_TOKEN_EXPIRES],
-                        CONF_REFRESH_TOKEN_EXPIRES: info[CONF_REFRESH_TOKEN_EXPIRES],
-                    }
-                    return self.async_create_entry(title=info["title"], data=entry_data)
+                    self._pending = user_input
+                    self._token_info = _token_info(api)
+                    station_id = user_input.get(CONF_STATION_ID) or ""
+                    if station_id and await self.hass.async_add_executor_job(
+                        api.test_connection, station_id
+                    ):
+                        return await self._async_create_password_entry(station_id)
+
+                    self._stations = await _async_list_stations(self.hass, api)
+                    if not station_id and len(self._stations) == 1:
+                        return await self._async_create_password_entry(
+                            self._stations[0]["id"]
+                        )
+                    if self._stations:
+                        return await self.async_step_station(
+                            error="station_not_found" if station_id else None
+                        )
+                    errors["base"] = (
+                        "cannot_connect" if station_id else "no_stations"
+                    )
 
         return self.async_show_form(
             step_id="password",
@@ -174,7 +238,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 {
                     vol.Required(CONF_USER_ID): cv.string,
                     vol.Required(CONF_PASSWORD): cv.string,
-                    vol.Required(CONF_STATION_ID): cv.string,
+                    vol.Optional(CONF_STATION_ID): cv.string,
                     vol.Optional(CONF_DEVICE_ID): cv.string,
                     vol.Optional(CONF_TIME_ZONE, default="Asia/Manila"): cv.string,
                 }
@@ -184,6 +248,45 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 "docs_url": "https://github.com/Conexo-Casa/solar-of-things-ha"
             },
         )
+
+    async def async_step_station(
+        self, user_input: dict[str, Any] | None = None, error: str | None = None
+    ) -> FlowResult:
+        """Pick one of the account's stations (#14)."""
+        if user_input is not None:
+            return await self._async_create_password_entry(user_input[CONF_STATION_ID])
+
+        options = {s["id"]: f"{s['name']} ({s['id']})" for s in self._stations}
+        return self.async_show_form(
+            step_id="station",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_STATION_ID, default=next(iter(options))
+                    ): vol.In(options)
+                }
+            ),
+            errors={"base": error} if error else {},
+        )
+
+    async def _async_create_password_entry(self, station_id: str) -> FlowResult:
+        """Create the entry from the held login and the chosen station."""
+        await self.async_set_unique_id(f"station_{station_id}")
+        self._abort_if_unique_id_configured()
+        pending = self._pending
+        entry_data = {
+            CONF_USER_ID: pending[CONF_USER_ID],
+            CONF_PASSWORD: pending[CONF_PASSWORD],
+            CONF_STATION_ID: station_id,
+            CONF_DEVICE_ID: pending.get(CONF_DEVICE_ID, ""),
+            CONF_TIME_ZONE: pending[CONF_TIME_ZONE],
+            **self._token_info,
+        }
+        title = next(
+            (s["name"] for s in self._stations if s["id"] == station_id),
+            f"Solar Station {station_id}",
+        )
+        return self.async_create_entry(title=title, data=entry_data)
 
     # ── Step 2b: legacy IOT token ─────────────────────────────────────────────
 
@@ -195,7 +298,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # The entry is created from this same dict, so trim it up front.
             user_input = normalise_config_fields(user_input)
             time_zone = user_input.get(CONF_TIME_ZONE) or "Asia/Manila"
-            if not is_valid_time_zone(time_zone):
+            if not await _async_valid_time_zone(self.hass, time_zone):
                 errors["base"] = "invalid_time_zone"
             else:
                 try:
