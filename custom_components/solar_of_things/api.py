@@ -1164,24 +1164,35 @@ class SolarOfThingsAPI:
             if k and v is not None:
                 result[k] = v
 
-        # Extract monthly totals (fallback: look for known keys)
-        monthly: dict[str, Any] = {}
-        pv_total = result.get(month_key) or result.get("pvTotal") or result.get("pv") or 0
-        monthly["monthly_pv_generated"] = float(pv_total or 0)
+        # Extract monthly totals.  The key names below were never confirmed
+        # against a real response, and on every station checked so far
+        # (owner's Sumry stations, #14 SMT, #45 PowMR) none of them match.
+        # A missing value is therefore UNKNOWN, never 0: a fabricated 0 kWh
+        # is written into long-term statistics and cannot be removed later.
+        _LOGGER.debug(
+            "SolarOfThings station %s: monthly summary keys %s (looking for %s)",
+            station_id,
+            sorted(result),
+            month_key,
+        )
 
-        grid_import = result.get("gridImport") or result.get("buy") or 0
-        monthly["monthly_grid_import"] = float(grid_import or 0)
+        def _first(*keys: str) -> float | None:
+            for key in keys:
+                number = _coerce_number(result.get(key))
+                if number is not None:
+                    return number
+            return None
 
-        total_consumption = result.get("totalConsumption") or result.get("load") or 0
-        monthly["monthly_total_consumption"] = float(total_consumption or 0)
-
-        if monthly["monthly_total_consumption"] > 0:
-            monthly["monthly_solar_percentage"] = round(
-                100.0 * monthly["monthly_pv_generated"] / monthly["monthly_total_consumption"], 1
-            )
-        else:
-            monthly["monthly_solar_percentage"] = 0.0
-
+        monthly: dict[str, Any] = {
+            "monthly_pv_generated": _first(month_key, "pvTotal", "pv"),
+            "monthly_grid_import": _first("gridImport", "buy"),
+            "monthly_total_consumption": _first("totalConsumption", "load"),
+        }
+        pv = monthly["monthly_pv_generated"]
+        load = monthly["monthly_total_consumption"]
+        monthly["monthly_solar_percentage"] = (
+            round(100.0 * pv / load, 1) if pv is not None and load else None
+        )
         return monthly
 
     # ─── Device settings ───────────────────────────────────────────────────────
