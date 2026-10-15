@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.8.4] - 2026-10-15
+
+### Fixed
+- **AC Output, Load and Grid Import no longer 1000× too high on the Datouboss JC-5052** (#42). On this model the time-series value arrives via the `outputActivePower` alias and the energy-flow data has no `acOutputActivePower` block, so v2.8.2's unit lookup found no tag and assumed kW. The unit is now taken from `acOutputActivePower`, then `outputActivePower`, then `loadActivePower`, whichever is tagged first. Devices tagging `acOutputActivePower`, or with no tag at all, are unchanged. Thanks to @otembajelle for the capture.
+
 ## [2.8.3] - 2026-10-14
 
 ### Fixed

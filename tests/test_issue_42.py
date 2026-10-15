@@ -69,3 +69,49 @@ def test_transport_error_falls_back_and_retries() -> None:
     assert api.fetch_latest_data("d")["acOutputActivePower"] == 1200.0
     api.fetch_latest_data("d")
     assert calls["flow"] >= 2                    # not cached; retried
+
+
+# ── 2.8.4: JC-5052 capture 2026-10-15 ─────────────────────────────────────────
+# Time-series: acOutputActivePower null on every point; the outputActivePower
+# alias carries 1891 / 1932 W.  Energy-flow has no acOutputActivePower block
+# but tags outputActivePower and loadActivePower "W".
+JC5052_FLOW = {
+    "outputActivePower": {"key": "outputActivePower", "unit": "W", "value": 0},
+    "loadActivePower": {"key": "loadActivePower", "unit": "W", "value": 0},
+    "apparentPowerofLoad": {"key": "apparentPowerofLoad", "unit": "VA", "value": 0},
+    "generationPower": {"key": "generationPower", "unit": "kW", "value": 0},
+}
+
+
+def _alias_api(flow_fields):
+    api = SolarOfThingsAPI(iot_token="t")
+    api._ensure_token_valid = lambda: None
+    history = {
+        "acOutputActivePower": [None, None],
+        "outputActivePower": [1891.0, 1932.0],
+        "batteryCapacity": [13.0, 8.0],
+        "batteryVoltage": [48.8, 48.0],
+        "batteryDischargeCurrent": [0.0, 0.0],
+    }
+    api._post = lambda *a, **k: {"code": 0, "data": {"payload": {"fields": history}}}
+    api._get = lambda *a, **k: {
+        "code": 0, "data": {"deviceAttributeState": {"fields": flow_fields}},
+    }
+    return api
+
+
+def test_42_unit_from_output_active_power_alias() -> None:
+    result = _alias_api(JC5052_FLOW).fetch_latest_data("jc5052")
+    assert result["acOutputActivePower"] == 1932.0     # was 1932000 W
+    assert result["loadPower"] == 1932.0
+    assert result["batteryPower"] is None              # no usable current
+
+
+def test_42_unit_from_load_active_power_when_alias_untagged() -> None:
+    flow = {"loadActivePower": {"unit": "W", "value": 0}}
+    assert _alias_api(flow).fetch_latest_data("x")["acOutputActivePower"] == 1932.0
+
+
+def test_ac_output_tag_wins_over_alias_tags() -> None:
+    flow = {**JC5052_FLOW, "acOutputActivePower": {"unit": "kW", "value": 1.9}}
+    assert _alias_api(flow).fetch_latest_data("x")["acOutputActivePower"] == 1932000.0
