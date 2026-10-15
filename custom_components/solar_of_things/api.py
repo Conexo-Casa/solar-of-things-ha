@@ -318,9 +318,10 @@ def _flatten_flow_cards(payload: dict[str, Any], fields: dict[str, Any]) -> dict
     return merged
 
 
-# Station-summary property keys holding monthly load consumption, in priority
-# order.  Empty until confirmed from a real capture (sensor reads unknown).
-MONTHLY_CONSUMPTION_KEYS: tuple[str, ...] = ()
+# Station-summary property keys holding monthly load consumption.  Listed in
+# the owner's station summary (kWh); published only when the portal flags the
+# month as a real value, so stations that don't record it read unknown.
+MONTHLY_CONSUMPTION_KEYS: tuple[str, ...] = ("consumeElectricityQuantity",)
 
 
 def _describe_summary_properties(data: Any, month_key: str) -> list[str]:
