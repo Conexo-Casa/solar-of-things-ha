@@ -1146,6 +1146,13 @@ class SolarOfThingsAPI:
         )
         resp.raise_for_status()
         data = resp.json()
+        # Raw response at debug: the parsing below has never been checked
+        # against a real portal reply, so the shape itself is what we need.
+        _LOGGER.debug(
+            "SolarOfThings station %s: monthly summary raw response: %.4000s",
+            station_id,
+            data,
+        )
 
         if data.get("code") not in (0, None):
             raise RuntimeError(
