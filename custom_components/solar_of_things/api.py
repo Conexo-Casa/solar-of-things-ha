@@ -318,6 +318,72 @@ def _flatten_flow_cards(payload: dict[str, Any], fields: dict[str, Any]) -> dict
     return merged
 
 
+# Station-summary property keys holding monthly load consumption, in priority
+# order.  Empty until confirmed from a real capture (sensor reads unknown).
+MONTHLY_CONSUMPTION_KEYS: tuple[str, ...] = ()
+
+
+def _describe_summary_properties(data: Any, month_key: str) -> list[str]:
+    """One "key [unit] value (real|padded)" entry per property, for debug logs."""
+    payload = data.get("data") if isinstance(data, dict) else None
+    props = payload.get("properties") if isinstance(payload, dict) else None
+    out: list[str] = []
+    for item in props if isinstance(props, list) else []:
+        prop = item.get("property") if isinstance(item, dict) else None
+        if not isinstance(prop, dict):
+            continue
+        point = next(
+            (
+                p for p in item.get("timePoints") or []
+                if isinstance(p, dict) and p.get("time") == month_key
+            ),
+            {},
+        )
+        real = "real" if point.get("isRealValue") is not False else "padded"
+        out.append(
+            f"{prop.get('key')} [{prop.get('unit')}] {point.get('value')} ({real})"
+        )
+    return out
+
+
+def parse_monthly_summary(data: Any, month_key: str) -> dict[str, float]:
+    """Return {propertyKey: value} for *month_key* from a yearly summary.
+
+    Real shape (owner's Sumry stations, 2026-10-15)::
+
+        data.properties[] = {
+            "property": {"key": "pvGeneratedEnergy", "unit": "kWh", ...},
+            "timePoints": [{"time": "2026-10", "value": 49.839,
+                            "isRealValue": true}, ...],
+        }
+
+    Points flagged ``isRealValue: false`` are skipped: the portal pads empty
+    months, and metrics a station never records, with value 0, and
+    publishing those as 0 kWh is what left every Monthly sensor at 0.
+    Pure function, no I/O.
+    """
+    payload = data.get("data") if isinstance(data, dict) else None
+    props = payload.get("properties") if isinstance(payload, dict) else None
+    result: dict[str, float] = {}
+    for item in props if isinstance(props, list) else []:
+        if not isinstance(item, dict):
+            continue
+        prop = item.get("property")
+        key = prop.get("key") if isinstance(prop, dict) else None
+        points = item.get("timePoints")
+        if not isinstance(key, str) or not isinstance(points, list):
+            continue
+        for point in points:
+            if not isinstance(point, dict) or point.get("time") != month_key:
+                continue
+            if point.get("isRealValue") is not False:
+                number = _coerce_number(point.get("value"))
+                if number is not None:
+                    result[key] = number
+            break
+    return result
+
+
 def map_energy_flow_fields(fields: Any) -> dict[str, float]:
     """Translate an energy-flow ``fields`` mapping into canonical sensor keys.
 
@@ -1146,13 +1212,6 @@ class SolarOfThingsAPI:
         )
         resp.raise_for_status()
         data = resp.json()
-        # Raw response at debug: the parsing below has never been checked
-        # against a real portal reply, so the shape itself is what we need.
-        _LOGGER.debug(
-            "SolarOfThings station %s: monthly summary raw response: %.4000s",
-            station_id,
-            data,
-        )
 
         if data.get("code") not in (0, None):
             raise RuntimeError(
@@ -1160,29 +1219,23 @@ class SolarOfThingsAPI:
                 f"message={data.get('message')}"
             )
 
-        props = (((data.get("data") or {}).get("properties")) or
-                 (data.get("data") or {}).get("list") or
-                 [])
-
-        result: dict[str, Any] = {}
-        for item in props if isinstance(props, list) else []:
-            k = item.get("key") or item.get("name")
-            v = item.get("value")
-            if k and v is not None:
-                result[k] = v
-
-        # Extract monthly totals.  The key names below were never confirmed
-        # against a real response, and on every station checked so far
-        # (owner's Sumry stations, #14 SMT, #45 PowMR) none of them match.
-        # A missing value is therefore UNKNOWN, never 0: a fabricated 0 kWh
-        # is written into long-term statistics and cannot be removed later.
+        result = parse_monthly_summary(data, month_key)
+        if _LOGGER.isEnabledFor(logging.DEBUG):
+            _LOGGER.debug(
+                "SolarOfThings station %s: monthly summary properties %s",
+                station_id,
+                _describe_summary_properties(data, month_key),
+            )
         _LOGGER.debug(
-            "SolarOfThings station %s: monthly summary keys %s (looking for %s)",
+            "SolarOfThings station %s: monthly summary %s -> %s",
             station_id,
-            sorted(result),
             month_key,
+            result,
         )
 
+        # Keys confirmed on the owner's Sumry stations (2026-10-15 capture),
+        # all kWh.  Anything missing reads UNKNOWN, never 0: a fabricated
+        # 0 kWh is written into long-term statistics and cannot be removed.
         def _first(*keys: str) -> float | None:
             for key in keys:
                 number = _coerce_number(result.get(key))
@@ -1191,9 +1244,9 @@ class SolarOfThingsAPI:
             return None
 
         monthly: dict[str, Any] = {
-            "monthly_pv_generated": _first(month_key, "pvTotal", "pv"),
-            "monthly_grid_import": _first("gridImport", "buy"),
-            "monthly_total_consumption": _first("totalConsumption", "load"),
+            "monthly_pv_generated": _first("pvGeneratedEnergy"),
+            "monthly_grid_import": _first("buyElectricityQuantity"),
+            "monthly_total_consumption": _first(*MONTHLY_CONSUMPTION_KEYS),
         }
         pv = monthly["monthly_pv_generated"]
         load = monthly["monthly_total_consumption"]
