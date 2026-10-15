@@ -267,6 +267,15 @@ def _coerce_number(value: Any) -> float | None:
 # that converts each into W (the unit every power sensor declares).
 _POWER_UNIT_SCALE: dict[str, float] = {"w": 1.0, "kw": 1000.0}
 
+# Energy-flow keys whose unit tag gives the time-series acOutputActivePower
+# unit, in priority order (#42: JC-5052 tags only outputActivePower /
+# loadActivePower, both "W").
+_AC_OUTPUT_UNIT_KEYS: tuple[str, ...] = (
+    "acOutputActivePower",
+    "outputActivePower",
+    "loadActivePower",
+)
+
 
 def _scaled_number(raw: Any, scale: float | None) -> float | None:
     """Coerce one energy-flow field and convert it into the sensor's unit.
@@ -1050,9 +1059,19 @@ class SolarOfThingsAPI:
             fields = payload.get("fields")
         if not isinstance(fields, dict):
             fields = {}
-        # Remember this device's unit for acOutputActivePower (#42).
-        ac_raw = fields.get("acOutputActivePower")
-        unit = ac_raw.get("unit") if isinstance(ac_raw, dict) else None
+        # Remember this device's unit for acOutputActivePower (#42).  The
+        # JC-5052 has no acOutputActivePower block at all: its time-series
+        # value arrives via the outputActivePower alias, which energy-flow
+        # tags "W" (as is loadActivePower, the same quantity).  Take the tag
+        # from the first of these keys that carries one; acOutputActivePower
+        # wins, so devices that tag it are unaffected.
+        unit = None
+        for unit_key in _AC_OUTPUT_UNIT_KEYS:
+            raw = fields.get(unit_key)
+            tag = raw.get("unit") if isinstance(raw, dict) else None
+            if isinstance(tag, str) and tag.strip().lower() in _POWER_UNIT_SCALE:
+                unit = tag
+                break
         if isinstance(unit, str) and unit.strip().lower() in _POWER_UNIT_SCALE:
             scale = _POWER_UNIT_SCALE[unit.strip().lower()]
             if self._ac_output_scale.get(device_id) != scale:
