@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.8.5] - 2026-10-15
+
+### Fixed
+- **Monthly sensors no longer stuck at 0** (#14, #45). The station-summary parser expected a flat key/value list, but the portal returns a per-month time series under each property, so nothing ever matched and every Monthly sensor published 0. The parser now reads the current month from that series. Monthly PV Generated shows the real value (e.g. 49.8 kWh on the owner's Sumry station). Metrics the portal pads with placeholder zeros (`isRealValue: false`) now read **unknown** instead of a false 0, which previously went into long-term statistics. Grid import and consumption come from `buyElectricityQuantity` and `consumeElectricityQuantity` when the station records them.
+
 ## [2.8.4] - 2026-10-15
 
 ### Fixed
