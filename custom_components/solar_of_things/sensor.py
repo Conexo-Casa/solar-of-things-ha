@@ -17,7 +17,12 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .device import inverter_device_info
-from .const import DOMAIN, SENSOR_DEFINITIONS
+from .const import (
+    DOMAIN,
+    ENERGY_FLOW_EXTRA_SENSORS,
+    SENSOR_DEFINITIONS,
+    STATION_SENSOR_PREFIXES,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -42,6 +47,9 @@ _TRANSLATION_KEYS: dict[str, str] = {
     "monthly_grid_import": "monthly_grid_import",
     "monthly_total_consumption": "monthly_total_consumption",
     "monthly_solar_percentage": "monthly_solar_percentage",
+    "daily_pv_generated": "daily_pv_generated",
+    "yearly_pv_generated": "yearly_pv_generated",
+    "lifetime_pv_generated": "lifetime_pv_generated",
 }
 
 
@@ -64,7 +72,7 @@ async def async_setup_entry(
         device_name = (coordinator.device_meta or {}).get("name") or device_id
 
         for key, definition in SENSOR_DEFINITIONS.items():
-            if key.startswith("monthly_"):
+            if key.startswith(STATION_SENSOR_PREFIXES):
                 continue
 
             entities.append(
@@ -78,10 +86,26 @@ async def async_setup_entry(
                 )
             )
 
-    # Station-level monthly sensors
+        # Extra energy-flow sensors (#41): only the fields this device
+        # actually reported with the expected unit tag at setup, so models
+        # that don't send them get no permanently-unknown entities.
+        extras = ((coordinator.data or {}).get("time_series") or {}).get("extras") or {}
+        for key in ENERGY_FLOW_EXTRA_SENSORS:
+            if key in extras:
+                entities.append(
+                    SolarOfThingsExtraSensor(
+                        coordinator=coordinator,
+                        station_id=station_id,
+                        device_id=device_id,
+                        device_name=device_name,
+                        sensor_key=key,
+                    )
+                )
+
+    # Station-level summary sensors
     if station_coordinator:
         for key, definition in SENSOR_DEFINITIONS.items():
-            if not key.startswith("monthly_"):
+            if not key.startswith(STATION_SENSOR_PREFIXES):
                 continue
 
             entities.append(
@@ -197,7 +221,14 @@ class SolarOfThingsStationMonthlySensor(CoordinatorEntity, SensorEntity):
         if unit == "kWh":
             self._attr_device_class = SensorDeviceClass.ENERGY
             self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
-            self._attr_state_class = SensorStateClass.TOTAL
+            # Monthly keeps its historic TOTAL (changing it would alter
+            # existing statistics); the new daily/yearly/lifetime counters
+            # only grow or reset to 0, which TOTAL_INCREASING handles.
+            self._attr_state_class = (
+                SensorStateClass.TOTAL
+                if sensor_key.startswith("monthly_")
+                else SensorStateClass.TOTAL_INCREASING
+            )
         elif unit == "%":
             self._attr_native_unit_of_measurement = PERCENTAGE
             self._attr_state_class = SensorStateClass.MEASUREMENT
@@ -215,6 +246,42 @@ class SolarOfThingsStationMonthlySensor(CoordinatorEntity, SensorEntity):
     def native_value(self):
         monthly = (self.coordinator.data or {}).get("monthly") or {}
         val = monthly.get(self._sensor_key)
+        if val is None:
+            return None
+        try:
+            return round(float(val), 2)
+        except Exception:
+            return None
+
+
+class SolarOfThingsExtraSensor(SolarOfThingsDeviceSensor):
+    """Unit-tagged energy-flow field published under its own key (#41)."""
+
+    def __init__(
+        self,
+        coordinator,
+        station_id: str,
+        device_id: str,
+        device_name: str,
+        sensor_key: str,
+    ) -> None:
+        name, unit, _factors, icon = ENERGY_FLOW_EXTRA_SENSORS[sensor_key]
+        super().__init__(
+            coordinator=coordinator,
+            station_id=station_id,
+            device_id=device_id,
+            device_name=device_name,
+            sensor_key=sensor_key,
+            sensor_definition={"name": name, "unit": unit, "icon": icon},
+        )
+        # No translation key: name comes straight from the table.
+        self._attr_translation_key = None
+        self._attr_name = name
+
+    @property
+    def native_value(self):
+        extras = ((self.coordinator.data or {}).get("time_series") or {}).get("extras") or {}
+        val = extras.get(self._sensor_key)
         if val is None:
             return None
         try:

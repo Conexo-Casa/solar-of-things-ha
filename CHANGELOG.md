@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.9.0] - 2026-10-22
+
+### Added
+- **Station Daily, Yearly and Lifetime PV Generated** (#45). Read from the same portal summaries that feed Monthly PV Generated (daily points from the month summary, lifetime from the per-year summary). Verified live on the owner's two stations against the portal (e.g. 2.65 kWh today, 2,822.8 kWh lifetime). Each one reads unknown on its own if its summary fails; Monthly is unaffected.
+- **Extra inverter sensors from the energy-flow data** (#41): Generation Power, Load Percentage, PV Voltage, PV Generated Today, and the inverter's own Today / This Month / This Year / Total counters for load, battery charge, battery discharge, grid import and grid export. A field is published only when its unit tag matches (case-insensitive: some firmware tags "kWH"), and entities are created only for fields the inverter actually reports, so other models get no dead sensors. Thanks to @gerardfarrell11 for the Gospower capture and @eidemillerp for finding the portal's statistics.
+
+### Changed
+- Devices whose energy flow carries extra fields make one energy-flow call per poll (shared with the existing unit lookup and fallback, never two). Devices without any extra field stop asking after the first check.
+
 ## [2.8.5] - 2026-10-15
 
 ### Fixed

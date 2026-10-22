@@ -100,7 +100,7 @@ this project, not a fallback.
 |---|---|
 | 🔍 **Auto-discovery** | Enter Station ID → HA fetches all device IDs automatically |
 | 📊 **Real-time monitoring** | 10 per-device sensors, updated every 5 min |
-| 📅 **Monthly statistics** | 4 station-level energy summary sensors |
+| 📅 **Energy statistics** | Station PV for today, this month, this year and lifetime, plus monthly grid/consumption |
 | 🎛️ **System control** | 8 control entities (battery limits, modes, grid switches) |
 | ⚡ **Energy Dashboard** | All power and energy sensors are dashboard-ready |
 | 🏠 **Multi-station** | Unlimited stations via multiple config entries |
@@ -137,6 +137,20 @@ this project, not a fallback.
 | `Station {id} Monthly Grid Import` | kWh | `energy` | Total grid import this month |
 | `Station {id} Monthly Total Consumption` | kWh | `energy` | Total household consumption this month |
 | `Station {id} Monthly Solar Coverage` | % | — | Percentage of consumption met by solar |
+| `Station {id} Daily PV Generated` | kWh | `energy` | Solar generation today |
+| `Station {id} Yearly PV Generated` | kWh | `energy` | Solar generation this calendar year |
+| `Station {id} Lifetime PV Generated` | kWh | `energy` | Solar generation since the station was created |
+
+### Extra Device Sensors (model-dependent)
+> Created only for fields your inverter actually reports with a unit tag, so models that don't send them get no permanently-unknown entities.
+
+| Entity | Unit | Description |
+|---|---|---|
+| `{device} Generation Power` | W | Total PV generation as reported by the inverter |
+| `{device} Load Percentage` | % | Inverter load as a share of its rating |
+| `{device} PV Voltage` | V | PV input voltage (single-MPPT models) |
+| `{device} PV Generated Today` | kWh | Inverter's own daily PV counter |
+| `{device} Load / Battery Charged / Battery Discharged / Grid Import / Grid Export Energy` — Today, This Month, This Year, Total | kWh | Inverter's own energy counters |
 
 ---
 
@@ -258,6 +272,7 @@ Go to **Settings → Dashboards → Energy** and configure:
 | Return to grid | `sensor.{device}_grid_feed_in_power` |
 | Battery charge | `sensor.{device}_battery_charging_current` |
 | Battery discharge | `sensor.{device}_battery_discharge_current` |
+| Daily solar (production) | `sensor.station_{id}_daily_pv_generated` |
 | Monthly solar (production) | `sensor.station_{id}_monthly_pv_generated` |
 | Monthly grid import | `sensor.station_{id}_monthly_grid_import` |
 

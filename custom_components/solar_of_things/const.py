@@ -54,6 +54,12 @@ IOT_APP_SECRET_ENC  = "I4D0KRr2339z3pQ/at91V9BpFAOe54DaTafwSm6suIQ="
 # ─── Data endpoints ────────────────────────────────────────────────────────────
 API_TIME_SERIES    = "/apis/deviceState/simple/attribute/keys/history/v1"
 API_MONTHLY_SUMMARY = "/apis/stationOverView/stateAttributeSummary/category/yearly"
+# Same summary family, other periods (portal umi.js, #45).  "monthly" with
+# {"time": "YYYY-MM"} returns one point per day; "total" (no body) one point
+# per year.
+API_SUMMARY_MONTHLY = "/apis/stationOverView/stateAttributeSummary/category/monthly"
+API_SUMMARY_TOTAL   = "/apis/stationOverView/stateAttributeSummary/category/total"
+SUMMARY_CATEGORY    = "pvInverterElectricityQuantityClass"
 # Remote device config endpoints (discovered 2026-03-07 from live API testing).
 # These accept a plain IOT-Token header (no IOT-Open-Sign) and use the device ID
 # as a query parameter.  Write sends one setting key+value per call.
@@ -250,6 +256,43 @@ ENERGY_FLOW_UNVERIFIED: tuple[str, ...] = (
                            # field has no confirmed use yet.
 )
 
+# ─── Extra energy-flow sensors (#41) ───────────────────────────────────────────
+# Fields some firmware reports ONLY on the energy-flow endpoint, published under
+# their own key.  Confirmed on the Gospower via RWB1 (#41, 2026-10-13 capture),
+# where every one carries a unit tag.  A field is published only when its tag
+# matches the expected unit (case-insensitive: the same capture tags
+# loadConsumedEnergyOfDay "kWH"), so an untagged or differently-scaled field
+# reads unknown instead of a guessed number.  Entities are created only for
+# fields the device actually reports, so other models gain no dead sensors.
+# Each entry: field -> (name, sensor unit, {tag(lower): factor to sensor unit}, icon)
+_KWH = {"kwh": 1.0}
+ENERGY_FLOW_EXTRA_SENSORS: dict[str, tuple[str, str, dict[str, float], str]] = {
+    "generationPower":         ("Generation Power", "W", {"w": 1.0, "kw": 1000.0}, "mdi:solar-power"),
+    "loadPercentage":          ("Load Percentage", "%", {"%": 1.0}, "mdi:gauge"),
+    "pvVoltage":               ("PV Voltage", "V", {"v": 1.0}, "mdi:solar-panel"),
+    "pvGeneratedEnergyOfDay":  ("PV Generated Today", "kWh", _KWH, "mdi:solar-power"),
+    "loadConsumedEnergyOfDay":   ("Load Energy Today", "kWh", _KWH, "mdi:home-lightning-bolt"),
+    "loadConsumedEnergyOfMonth": ("Load Energy This Month", "kWh", _KWH, "mdi:home-lightning-bolt"),
+    "loadConsumedEnergyOfYear":  ("Load Energy This Year", "kWh", _KWH, "mdi:home-lightning-bolt"),
+    "totalLoadConsumedEnergy":   ("Load Energy Total", "kWh", _KWH, "mdi:home-lightning-bolt"),
+    "batteryChargingOfThisDay":    ("Battery Charged Today", "kWh", _KWH, "mdi:battery-arrow-up"),
+    "batteryChargingOfThisMonth":  ("Battery Charged This Month", "kWh", _KWH, "mdi:battery-arrow-up"),
+    "batteryChargingOfThisYear":   ("Battery Charged This Year", "kWh", _KWH, "mdi:battery-arrow-up"),
+    "totalBatteryChargingEnergy":  ("Battery Charged Total", "kWh", _KWH, "mdi:battery-arrow-up"),
+    "batteryDischargeOfThisDay":   ("Battery Discharged Today", "kWh", _KWH, "mdi:battery-arrow-down"),
+    "batteryDischargeOfThisMonth": ("Battery Discharged This Month", "kWh", _KWH, "mdi:battery-arrow-down"),
+    "batteryDischargeOfThisYear":  ("Battery Discharged This Year", "kWh", _KWH, "mdi:battery-arrow-down"),
+    "totalBatteryDischargeEnergy": ("Battery Discharged Total", "kWh", _KWH, "mdi:battery-arrow-down"),
+    "consumedEnergyFromGridOfThisDay":   ("Grid Import Energy Today", "kWh", _KWH, "mdi:transmission-tower-import"),
+    "consumedEnergyFromGridOfThisMonth": ("Grid Import Energy This Month", "kWh", _KWH, "mdi:transmission-tower-import"),
+    "consumedEnergyFromGridOfThisYear":  ("Grid Import Energy This Year", "kWh", _KWH, "mdi:transmission-tower-import"),
+    "totalConsumedEnergyFromGrid":       ("Grid Import Energy Total", "kWh", _KWH, "mdi:transmission-tower-import"),
+    "generatedEnergyToGridOfThisDay":    ("Grid Export Energy Today", "kWh", _KWH, "mdi:transmission-tower-export"),
+    "generatedEnergyToGridOfThisMonth":  ("Grid Export Energy This Month", "kWh", _KWH, "mdi:transmission-tower-export"),
+    "generatedEnergyToGridOfThisYear":   ("Grid Export Energy This Year", "kWh", _KWH, "mdi:transmission-tower-export"),
+    "totalGeneratedEnergyToGrid":        ("Grid Export Energy Total", "kWh", _KWH, "mdi:transmission-tower-export"),
+}
+
 # Canonical keys the time-series endpoint is expected to fill.  If ANY of them
 # is missing the energy-flow fallback runs and fills only the gaps — some
 # firmware populates the battery keys but none of the power keys (#35, #37),
@@ -379,7 +422,30 @@ SENSOR_DEFINITIONS = {
         "unit": "%",
         "icon": "mdi:percent",
     },
+    # Station PV energy for today / this year / lifetime (#45).  Same portal
+    # summary family as the monthly sensors, per station.
+    "daily_pv_generated": {
+        "name": "Daily PV Generated",
+        "unit": "kWh",
+        "device_class": "energy",
+        "icon": "mdi:solar-power",
+    },
+    "yearly_pv_generated": {
+        "name": "Yearly PV Generated",
+        "unit": "kWh",
+        "device_class": "energy",
+        "icon": "mdi:solar-power",
+    },
+    "lifetime_pv_generated": {
+        "name": "Lifetime PV Generated",
+        "unit": "kWh",
+        "device_class": "energy",
+        "icon": "mdi:solar-power",
+    },
 }
+
+# Prefixes marking station-level (not per-device) entries in SENSOR_DEFINITIONS.
+STATION_SENSOR_PREFIXES: tuple[str, ...] = ("monthly_", "daily_", "yearly_", "lifetime_")
 
 # ─── Device-setting key aliases (write path) ───────────────────────────────────
 # Several inverter firmwares expose the same logical control under a different
