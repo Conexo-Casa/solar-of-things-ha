@@ -156,6 +156,15 @@
       },
       "monthly_solar_percentage": {
         "name": "Monthly Solar Coverage"
+      },
+      "daily_pv_generated": {
+        "name": "Daily PV Generated"
+      },
+      "yearly_pv_generated": {
+        "name": "Yearly PV Generated"
+      },
+      "lifetime_pv_generated": {
+        "name": "Lifetime PV Generated"
       }
     }
   }

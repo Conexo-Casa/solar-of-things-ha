@@ -88,6 +88,10 @@ from .const import (
     API_REFRESH_TOKEN as API_REFRESH_TOKEN_ENDPOINT,
     API_TIME_SERIES,
     API_MONTHLY_SUMMARY,
+    API_SUMMARY_MONTHLY,
+    API_SUMMARY_TOTAL,
+    SUMMARY_CATEGORY,
+    ENERGY_FLOW_EXTRA_SENSORS,
     API_DEVICE_LIST,
     API_STATION_LIST,
     API_SETTINGS_GET,
@@ -430,6 +434,51 @@ def map_energy_flow_fields(fields: Any) -> dict[str, float]:
     return mapped
 
 
+def map_energy_flow_extras(fields: Any) -> dict[str, float]:
+    """Return {field: value} for ENERGY_FLOW_EXTRA_SENSORS present in *fields*.
+
+    A field is published only when its own ``unit`` tag is one of the units
+    listed for it (compared case-insensitively — #41 tags some energy fields
+    "kWH").  Untagged or unexpected units are skipped, never guessed.  Pure
+    function, no I/O.
+    """
+    if not isinstance(fields, dict):
+        return {}
+    out: dict[str, float] = {}
+    for key, (_name, _unit, factors, _icon) in ENERGY_FLOW_EXTRA_SENSORS.items():
+        raw = fields.get(key)
+        if not isinstance(raw, dict):
+            continue
+        tag = raw.get("unit")
+        factor = factors.get(tag.strip().lower()) if isinstance(tag, str) else None
+        number = _coerce_number(raw)
+        if factor is None or number is None:
+            continue
+        out[key] = number * factor
+    return out
+
+
+def sum_real_points(data: Any, prop_key: str) -> float | None:
+    """Sum every real (``isRealValue`` not false) point of one summary property.
+
+    Used for lifetime totals from the per-year "total" summary.  None when the
+    property is absent or has no real point, so a padded series reads unknown.
+    """
+    payload = data.get("data") if isinstance(data, dict) else None
+    props = payload.get("properties") if isinstance(payload, dict) else None
+    for item in props if isinstance(props, list) else []:
+        prop = item.get("property") if isinstance(item, dict) else None
+        if not isinstance(prop, dict) or prop.get("key") != prop_key:
+            continue
+        values = [
+            n for p in item.get("timePoints") or []
+            if isinstance(p, dict) and p.get("isRealValue") is not False
+            and (n := _coerce_number(p.get("value"))) is not None
+        ]
+        return sum(values) if values else None
+    return None
+
+
 def resolve_setting_key(settings: Any, canonical: str) -> str | None:
     """Return whichever alias of `canonical` is actually present in `settings`.
 
@@ -522,6 +571,15 @@ class SolarOfThingsAPI:
         # Per-device W-per-unit factor for the time-series acOutputActivePower,
         # learned once from the energy-flow payload's own unit tag (#42).
         self._ac_output_scale: dict[str, float] = {}
+        # Devices whose portal has no energy-flow rule (code 70132): skip the
+        # per-poll extras fetch for them instead of failing every 5 minutes.
+        self._no_energy_flow: set[str] = set()
+        # Devices whose energy-flow payload carried none of the extra fields
+        # (#41) — checked once, then never re-fetched for extras.
+        self._no_extras: set[str] = set()
+        # Fields from the most recent energy-flow fetch per device, so one
+        # poll never fetches it twice (unit lookup + extras).
+        self._flow_cache: dict[str, dict[str, Any]] = {}
 
         # Determine auth mode
         if user_id and password:
@@ -888,8 +946,10 @@ class SolarOfThingsAPI:
         (issue #7).  For those devices we fall back to the live energy-flow
         endpoint and translate its field names onto the canonical sensor keys.
         """
+        self._flow_cache.pop(device_id, None)
         latest_values = self._fetch_time_series_values(device_id)
 
+        flow_fields: dict[str, Any] | None = None
         missing = missing_realtime_keys(latest_values)
         # The loud diagnostics below are for devices with NO realtime data at
         # all.  A working device that merely lacks one key (an off-grid unit
@@ -913,6 +973,7 @@ class SolarOfThingsAPI:
                 # Must reach the coordinator so it can start the re-auth flow.
                 raise
             except EnergyFlowRuleNotConfiguredError as err:
+                self._no_energy_flow.add(device_id)
                 # A portal-side setup gap, not something a field mapping can
                 # fix — but "no sensors, no warnings" (issue #21) looked
                 # identical to a bug, so this needs to be loud by default.
@@ -933,6 +994,7 @@ class SolarOfThingsAPI:
                     err,
                 )
             else:
+                flow_fields = fields
                 mapped = map_energy_flow_fields(fields)
                 if mapped:
                     _LOGGER.debug(
@@ -960,7 +1022,42 @@ class SolarOfThingsAPI:
                     )
 
         self._apply_derived_values(latest_values)
+        latest_values["extras"] = self._fetch_extras(device_id, flow_fields)
         return latest_values
+
+    def _fetch_extras(
+        self, device_id: str, fields: dict[str, Any] | None
+    ) -> dict[str, float]:
+        """Unit-tagged extra sensors from energy-flow (#41).
+
+        Reuses the fallback's payload when it was fetched this poll; otherwise
+        costs one energy-flow call per poll.  Failures only blank the extras.
+        """
+        if fields is None:
+            fields = self._flow_cache.get(device_id)
+        if fields is None:
+            if device_id in self._no_energy_flow or device_id in self._no_extras:
+                return {}
+            try:
+                fields = self.fetch_energy_flow(device_id)
+            except TokenExpiredError:
+                raise
+            except EnergyFlowRuleNotConfiguredError:
+                self._no_energy_flow.add(device_id)
+                return {}
+            except Exception as err:  # noqa: BLE001 - extras are optional
+                _LOGGER.debug(
+                    "SolarOfThings device %s: energy-flow extras unavailable: %s",
+                    device_id, err,
+                )
+                return {}
+        extras = map_energy_flow_extras(fields)
+        if not extras and fields:
+            self._no_extras.add(device_id)
+        _LOGGER.debug(
+            "SolarOfThings device %s: energy-flow extras %s", device_id, extras
+        )
+        return extras
 
     def _fetch_time_series_values(self, device_id: str) -> dict[str, Any]:
         """Return the latest value per key from the historical time-series API."""
@@ -1150,7 +1247,9 @@ class SolarOfThingsAPI:
             self._ac_output_scale[device_id] = scale
         else:
             self._ac_output_scale.setdefault(device_id, 1000.0)
-        return _flatten_flow_cards(payload, fields)
+        merged = _flatten_flow_cards(payload, fields)
+        self._flow_cache[device_id] = merged
+        return merged
 
     @staticmethod
     def _apply_derived_values(latest_values: dict[str, Any]) -> None:
@@ -1254,7 +1353,64 @@ class SolarOfThingsAPI:
         monthly["monthly_solar_percentage"] = (
             round(100.0 * pv / load, 1) if pv is not None and load else None
         )
+        # This year's PV comes from the same yearly response: sum of its
+        # real monthly points (#45).
+        monthly["yearly_pv_generated"] = sum_real_points(data, "pvGeneratedEnergy")
+        monthly.update(self._fetch_period_pv(station_id, now))
         return monthly
+
+    def _summary(self, path: str, station_id: str, body: dict[str, Any] | None) -> Any:
+        """POST one station summary endpoint; raise on a portal error code."""
+        self._ensure_token_valid()
+        url = (
+            f"{API_BASE_URL}{path}?stationId={station_id}"
+            f"&summaryCategoryKey={SUMMARY_CATEGORY}"
+        )
+        resp = self.session.post(url, json=body or {}, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("code") not in (0, None):
+            raise RuntimeError(
+                f"Summary error code={data.get('code')} message={data.get('message')}"
+            )
+        return data
+
+    def _fetch_period_pv(self, station_id: str, now: datetime) -> dict[str, Any]:
+        """Today's and lifetime PV energy for a station (#45).
+
+        Today = this day's point in the month summary; lifetime = sum of the
+        real yearly points in the total summary.  Each read is independent:
+        a failure leaves that sensor unknown and never breaks the monthly ones.
+        """
+        out: dict[str, Any] = {"daily_pv_generated": None, "lifetime_pv_generated": None}
+        day_key = now.strftime("%Y-%m-%d")
+        try:
+            data = self._summary(API_SUMMARY_MONTHLY, station_id, {"time": now.strftime("%Y-%m")})
+            if _LOGGER.isEnabledFor(logging.DEBUG):
+                _LOGGER.debug(
+                    "SolarOfThings station %s: daily summary properties %s",
+                    station_id, _describe_summary_properties(data, day_key),
+                )
+            out["daily_pv_generated"] = _coerce_number(
+                parse_monthly_summary(data, day_key).get("pvGeneratedEnergy")
+            )
+        except TokenExpiredError:
+            raise
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("SolarOfThings station %s: daily summary failed: %s", station_id, err)
+        try:
+            data = self._summary(API_SUMMARY_TOTAL, station_id, None)
+            if _LOGGER.isEnabledFor(logging.DEBUG):
+                _LOGGER.debug(
+                    "SolarOfThings station %s: total summary properties %s",
+                    station_id, _describe_summary_properties(data, str(now.year)),
+                )
+            out["lifetime_pv_generated"] = sum_real_points(data, "pvGeneratedEnergy")
+        except TokenExpiredError:
+            raise
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("SolarOfThings station %s: total summary failed: %s", station_id, err)
+        return out
 
     # ─── Device settings ───────────────────────────────────────────────────────
     # The remote config endpoints require only a plain IOT-Token header (which the
