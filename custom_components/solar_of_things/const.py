@@ -471,3 +471,32 @@ SETTING_KEY_ALIASES: dict[str, tuple[str, ...]] = {
     "batteryDischargeLimit": ("batteryDischargeLimit",),
     "gridChargeLimit": ("gridChargeLimit",),
 }
+
+
+# ─── Charge-current / comeback-voltage dropdowns (#9) ──────────────────────────
+# Writable keys and their allowed values, copied from the enumValues in the
+# Victor 19.2 settings capture posted on #9 (battery_setting group).  Each is
+# an Enumeration on the portal, so the dropdown only offers values the
+# inverter's own protocol lists; the value is sent exactly as the portal
+# sends it (string, including "48.0"-style decimals).  An entity is created
+# only when the device's settings cache contains the key, so models without
+# it get no dead control.
+# Each entry: setting key -> (name, unit, (allowed values...), icon)
+_AMPS_10_160 = tuple(str(a) for a in range(10, 170, 10))
+_AMPS_UTILITY = ("2",) + tuple(str(a) for a in range(10, 150, 10))
+CHARGE_CONTROL_SELECTS: dict[str, tuple[str, str, tuple[str, ...], str]] = {
+    "setMaxChargingCurrent": (
+        "Max Charging Current", "A", _AMPS_10_160, "mdi:battery-charging-high",
+    ),
+    "setUtilityMaxChargingCurrent": (
+        "Max Utility Charging Current", "A", _AMPS_UTILITY, "mdi:transmission-tower-import",
+    ),
+    "comebackBatteryModeVolSBUPriority": (
+        "SBU Return to Battery Voltage", "V",
+        tuple(f"{v}.0" for v in range(48, 59)), "mdi:battery-arrow-up-outline",
+    ),
+    "comebackUtilityModeVolSBUPriority": (
+        "SBU Return to Utility Voltage", "V",
+        tuple(str(v) for v in range(42, 52)), "mdi:battery-arrow-down-outline",
+    ),
+}
