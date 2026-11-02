@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.9.1] - 2026-11-02
+
+### Added
+- **More inverter sensors from the energy-flow data** (#49): Solar Charging Current, Inverter Charging Current, Input Voltage and Frequency, Output Voltage and Frequency, Inverter Temperature and Controller Temperature. Mapped from a Manyi UD10048AM capture. Same rule as 2.9.0: a field is published only when its unit tag matches (temperatures accept both "°C" and "℃"), and entities are created only for fields the inverter reports. Solar Charging Current is the charge controller's current into the battery, not panel current. Thanks to @Rinpon71 for the capture.
+
 ## [2.9.0] - 2026-10-22
 
 ### Added

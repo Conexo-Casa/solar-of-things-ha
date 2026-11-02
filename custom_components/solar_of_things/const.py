@@ -291,6 +291,20 @@ ENERGY_FLOW_EXTRA_SENSORS: dict[str, tuple[str, str, dict[str, float], str]] = {
     "generatedEnergyToGridOfThisMonth":  ("Grid Export Energy This Month", "kWh", _KWH, "mdi:transmission-tower-export"),
     "generatedEnergyToGridOfThisYear":   ("Grid Export Energy This Year", "kWh", _KWH, "mdi:transmission-tower-export"),
     "totalGeneratedEnergyToGrid":        ("Grid Export Energy Total", "kWh", _KWH, "mdi:transmission-tower-export"),
+    # Manyi UD10048AM (#49, 2026-10-23 capture), all unit-tagged; names follow
+    # the portal's labels.  controllerChargingCurrent is the solar charge
+    # controller's current INTO the battery, not panel current.  inputVoltage
+    # is kept as its own entity rather than feeding Grid Voltage: no capture
+    # yet shows what other models mean by the bare name.  Temperatures arrive
+    # tagged both "°C" and "℃" (U+2103) in the same payload.
+    "controllerChargingCurrent": ("Solar Charging Current", "A", {"a": 1.0}, "mdi:solar-power"),
+    "inverterChargingCurrent":   ("Inverter Charging Current", "A", {"a": 1.0}, "mdi:battery-charging"),
+    "inputVoltage":              ("Input Voltage", "V", {"v": 1.0}, "mdi:transmission-tower"),
+    "inputFrequency":            ("Input Frequency", "Hz", {"hz": 1.0}, "mdi:sine-wave"),
+    "outputVoltage":             ("Output Voltage", "V", {"v": 1.0}, "mdi:power-plug"),
+    "outputFrequency":           ("Output Frequency", "Hz", {"hz": 1.0}, "mdi:sine-wave"),
+    "deviceTemp":                ("Inverter Temperature", "°C", {"°c": 1.0, "℃": 1.0}, "mdi:thermometer"),
+    "controllerTemp":            ("Controller Temperature", "°C", {"°c": 1.0, "℃": 1.0}, "mdi:thermometer"),
 }
 
 # Canonical keys the time-series endpoint is expected to fill.  If ANY of them

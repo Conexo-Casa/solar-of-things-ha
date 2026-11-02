@@ -10,7 +10,9 @@ from homeassistant.const import (
     UnitOfElectricCurrent,
     UnitOfElectricPotential,
     UnitOfEnergy,
+    UnitOfFrequency,
     UnitOfPower,
+    UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -164,6 +166,14 @@ class SolarOfThingsDeviceSensor(CoordinatorEntity, SensorEntity):
         elif unit == "V":
             self._attr_device_class = SensorDeviceClass.VOLTAGE
             self._attr_native_unit_of_measurement = UnitOfElectricPotential.VOLT
+            self._attr_state_class = SensorStateClass.MEASUREMENT
+        elif unit == "°C":
+            self._attr_device_class = SensorDeviceClass.TEMPERATURE
+            self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+            self._attr_state_class = SensorStateClass.MEASUREMENT
+        elif unit == "Hz":
+            self._attr_device_class = SensorDeviceClass.FREQUENCY
+            self._attr_native_unit_of_measurement = UnitOfFrequency.HERTZ
             self._attr_state_class = SensorStateClass.MEASUREMENT
         elif unit == "%":
             if "battery" in sensor_key.lower():

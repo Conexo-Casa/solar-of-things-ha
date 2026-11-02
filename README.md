@@ -150,6 +150,11 @@ this project, not a fallback.
 | `{device} Load Percentage` | % | Inverter load as a share of its rating |
 | `{device} PV Voltage` | V | PV input voltage (single-MPPT models) |
 | `{device} PV Generated Today` | kWh | Inverter's own daily PV counter |
+| `{device} Solar Charging Current` | A | Solar charge controller's current into the battery (not panel current) |
+| `{device} Inverter Charging Current` | A | Inverter's (AC) charging current into the battery |
+| `{device} Input Voltage` / `Input Frequency` | V / Hz | AC input as the inverter labels it |
+| `{device} Output Voltage` / `Output Frequency` | V / Hz | AC output |
+| `{device} Inverter Temperature` / `Controller Temperature` | °C | Internal temperatures |
 | `{device} Load / Battery Charged / Battery Discharged / Grid Import / Grid Export Energy` — Today, This Month, This Year, Total | kWh | Inverter's own energy counters |
 
 ---
