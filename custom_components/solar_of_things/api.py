@@ -1421,7 +1421,11 @@ class SolarOfThingsAPI:
         """Write a single device setting key=value via the remote config write API."""
         self._ensure_token_valid()
         url = f"{API_BASE_URL}{API_SETTINGS_SET}?deviceId={device_id}"
-        payload = {"deviceId": device_id, "key": key, "value": value}
+        # The portal's own write call sends {"id": <deviceId>, "key", "value"}
+        # (stationDeviceList/deviceRemoteWrite in the portal JS).  Send `id`
+        # the way the portal does; `deviceId` is kept so nothing that worked
+        # before changes.
+        payload = {"id": device_id, "deviceId": device_id, "key": key, "value": value}
         resp = self.session.post(url, json=payload, timeout=30)
         resp.raise_for_status()
         data = resp.json()
@@ -1563,6 +1567,14 @@ class SolarOfThingsAPI:
         """Set maximum grid charge power (0–5000 W)."""
         key = self._resolve_write_key("gridChargeLimit", settings)
         self._write_setting(device_id, key, watts)
+
+    def set_setting_value(self, device_id: str, key: str, value: str) -> None:
+        """Write one enumerated setting value exactly as the portal sends it.
+
+        Used by the #9 dropdowns; `value` must be one of the allowed values
+        from CHARGE_CONTROL_SELECTS (the select entity enforces that).
+        """
+        self._write_setting(device_id, key, value)
 
     def list_stations(self) -> list[dict[str, str]]:
         """Return the account's stations as [{"id": ..., "name": ...}].
