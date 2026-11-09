@@ -61,6 +61,18 @@ STATION_UPDATE_INTERVAL = timedelta(minutes=30)
 # Entry setup / teardown
 # ──────────────────────────────────────────────────────────────────────────────
 
+@callback
+def _async_dismiss_reauth_flows(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Abort any lingering re-auth flows once authentication is working."""
+    for flow in entry.async_get_active_flows(hass, {"reauth"}):
+        hass.config_entries.flow.async_abort(flow["flow_id"])
+        _LOGGER.info(
+            "SolarOfThings [%s]: dismissed active re-auth flow %s",
+            entry.entry_id,
+            flow["flow_id"],
+        )
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Solar of Things from a config entry."""
     hass.data.setdefault(DOMAIN, {})
@@ -92,13 +104,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             hass.config_entries.async_update_entry(
                 entry,
                 data={
-                    **entry.data,
+                    **normalise_config_fields(entry.data),
                     CONF_IOT_TOKEN: access_token,
                     CONF_REFRESH_TOKEN: refresh_token,
                     CONF_ACCESS_TOKEN_EXPIRES: access_expires,
                     CONF_REFRESH_TOKEN_EXPIRES: refresh_expires,
                 },
             )
+            _async_dismiss_reauth_flows(hass, entry)
             _LOGGER.debug(
                 "SolarOfThings [%s]: access token refreshed; entry data updated",
                 entry.entry_id,
@@ -191,6 +204,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
+    _async_dismiss_reauth_flows(hass, entry)
     return True
 
 
@@ -233,6 +247,7 @@ class SolarOfThingsStationCoordinator(DataUpdateCoordinator):
             monthly = await self.hass.async_add_executor_job(
                 self.api.fetch_monthly_summary, self.station_id
             )
+            _async_dismiss_reauth_flows(self.hass, self._entry)
             return {"devices": devices, "monthly": monthly}
         except TokenExpiredError as err:
             _LOGGER.error(
@@ -277,6 +292,7 @@ class SolarOfThingsDeviceCoordinator(DataUpdateCoordinator):
             settings = await self.hass.async_add_executor_job(
                 self.api.fetch_settings, self.device_id
             )
+            _async_dismiss_reauth_flows(self.hass, self._entry)
             return {
                 "time_series": time_series,
                 "settings": settings,

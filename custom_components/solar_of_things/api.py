@@ -669,22 +669,29 @@ class SolarOfThingsAPI:
     def refresh_access_token(self) -> None:
         """Use the stored refresh token to obtain a new access token.
 
+        Uses the IOT Open Platform signed request format and includes both
+        accessToken and refreshToken in the request body as required by
+        /apis/login/refresh/access/token.
+
         Raises TokenExpiredError if the refresh token is also expired or invalid.
         """
-        if not self._refresh_token:
-            raise TokenExpiredError("No refresh token available.")
+        if not self._refresh_token or not self._access_token:
+            raise TokenExpiredError("No access/refresh token pair available.")
 
         _LOGGER.debug("SolarOfThings: refreshing access token")
 
+        import json as _json
+        payload = {
+            "accessToken": self._access_token,
+            "refreshToken": self._refresh_token,
+        }
+        body_bytes = _json.dumps(payload, separators=(",", ":")).encode("utf-8")
+        headers = _make_signed_headers(body_bytes)
+
         resp = requests.post(
             f"{API_AUTH_BASE_URL}{API_REFRESH_TOKEN_ENDPOINT}",
-            json={"refreshToken": self._refresh_token},
-            headers={
-                "Accept": "application/json",
-                "Content-Type": "application/json; charset=utf-8",
-                "Origin": "https://solar.siseli.com",
-                "Referer": "https://solar.siseli.com/",
-            },
+            data=body_bytes,
+            headers=headers,
             timeout=30,
         )
 
@@ -783,17 +790,22 @@ class SolarOfThingsAPI:
             _LOGGER.info("SolarOfThings: access token expiring; attempting refresh")
 
             # Strategy 1: use refresh token
-            if self._refresh_token:
+            if self._refresh_token and self._access_token:
                 try:
                     self.refresh_access_token()
                     return
-                except TokenExpiredError:
+                except TokenExpiredError as err:
                     _LOGGER.warning(
-                        "SolarOfThings: refresh token expired/invalid; "
-                        "attempting re-login"
+                        "SolarOfThings: refresh token expired/invalid (%s); "
+                        "attempting re-login",
+                        err,
                     )
                 except Exception as err:
-                    _LOGGER.error("SolarOfThings: token refresh request failed: %s", err)
+                    _LOGGER.warning(
+                        "SolarOfThings: token refresh request failed (%s); "
+                        "falling back to re-login",
+                        err,
+                    )
 
             # Strategy 2: re-login with stored credentials
             if self._auth_mode == "password" and self._user_id and self._password:
@@ -805,9 +817,12 @@ class SolarOfThingsAPI:
                         f"Re-login failed (credentials rejected): {err}"
                     ) from err
                 except Exception as err:
-                    raise TokenExpiredError(
-                        f"Re-login failed (network error): {err}"
-                    ) from err
+                    _LOGGER.warning(
+                        "SolarOfThings: re-login failed due to transient/network error "
+                        "(will retry on next poll): %s",
+                        err,
+                    )
+                    raise
 
             # Strategy 3: nothing left — tell HA to trigger re-auth
             raise TokenExpiredError(
@@ -817,28 +832,52 @@ class SolarOfThingsAPI:
 
     # ─── Internal HTTP helper ──────────────────────────────────────────────────
 
-    def _post(self, path: str, payload: dict[str, Any], *, timeout: int = 30) -> dict[str, Any]:
-        """Perform a POST to a data endpoint, automatically refreshing the token on 401.
+    @staticmethod
+    def _is_token_error_payload(data: Any) -> bool:
+        """Return True if a JSON response payload indicates an expired/invalid token."""
+        return isinstance(data, dict) and data.get("code") in (8, "8")
 
-        On second 401 (after refresh) raises TokenExpiredError.
+    def _force_refresh_or_relogin(self) -> None:
+        """Force an immediate token refresh or full re-login after a 401 or code=8."""
+        self._access_expires = None
+        self._ensure_token_valid()
+
+    def _post(self, path: str, payload: dict[str, Any], *, timeout: int = 30) -> dict[str, Any]:
+        """Perform a POST to a data endpoint, automatically refreshing the token on 401 or code=8.
+
+        On second 401 / code=8 (after refresh) raises TokenExpiredError.
         Uses API_BASE_URL (solar.siseli.com) — not the auth base URL.
         """
         self._ensure_token_valid()
 
-        resp = self.session.post(f"{API_BASE_URL}{path}", json=payload, timeout=timeout)
+        url = f"{API_BASE_URL}{path}"
+        resp = self.session.post(url, json=payload, timeout=timeout)
 
-        if resp.status_code == 401:
+        if getattr(resp, "status_code", 200) == 401:
             _LOGGER.warning("SolarOfThings: received 401; forcing token refresh")
-            # Force an immediate refresh even if _token_needs_refresh() is False
-            self._access_expires = None
-            self._ensure_token_valid()
-            resp = self.session.post(f"{API_BASE_URL}{path}", json=payload, timeout=timeout)
+            self._force_refresh_or_relogin()
+            resp = self.session.post(url, json=payload, timeout=timeout)
 
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+
+        if self._is_token_error_payload(data):
+            _LOGGER.warning("SolarOfThings: received token error (code=8) on POST; forcing token refresh")
+            self._force_refresh_or_relogin()
+            resp = self.session.post(url, json=payload, timeout=timeout)
+            resp.raise_for_status()
+            data = resp.json()
+            if self._is_token_error_payload(data) and self._auth_mode == "password" and self._user_id and self._password:
+                _LOGGER.warning("SolarOfThings: token still rejected after refresh; forcing full re-login")
+                self.login()
+                resp = self.session.post(url, json=payload, timeout=timeout)
+                resp.raise_for_status()
+                data = resp.json()
+
+        return data
 
     def _get(self, path: str, params: dict[str, Any], *, timeout: int = 30) -> dict[str, Any]:
-        """Perform a GET to a data endpoint, refreshing the token once on 401.
+        """Perform a GET to a data endpoint, refreshing the token once on 401 or code=8.
 
         Mirrors _post's retry behaviour: on a second 401 the nested
         _ensure_token_valid raises TokenExpiredError, which the coordinator
@@ -849,15 +888,28 @@ class SolarOfThingsAPI:
         url = f"{API_BASE_URL}{path}"
         resp = self.session.get(url, params=params, timeout=timeout)
 
-        if resp.status_code == 401:
+        if getattr(resp, "status_code", 200) == 401:
             _LOGGER.warning("SolarOfThings: received 401 on GET; forcing token refresh")
-            # Force an immediate refresh even if _token_needs_refresh() is False
-            self._access_expires = None
-            self._ensure_token_valid()
+            self._force_refresh_or_relogin()
             resp = self.session.get(url, params=params, timeout=timeout)
 
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+
+        if self._is_token_error_payload(data):
+            _LOGGER.warning("SolarOfThings: received token error (code=8) on GET; forcing token refresh")
+            self._force_refresh_or_relogin()
+            resp = self.session.get(url, params=params, timeout=timeout)
+            resp.raise_for_status()
+            data = resp.json()
+            if self._is_token_error_payload(data) and self._auth_mode == "password" and self._user_id and self._password:
+                _LOGGER.warning("SolarOfThings: token still rejected after refresh; forcing full re-login")
+                self.login()
+                resp = self.session.get(url, params=params, timeout=timeout)
+                resp.raise_for_status()
+                data = resp.json()
+
+        return data
 
     # ─── Public properties (for persistence in HA config entry) ───────────────
 
@@ -1303,15 +1355,12 @@ class SolarOfThingsAPI:
         year = now.year
         month_key = f"{year}-{str(now.month).zfill(2)}"
 
-        self._ensure_token_valid()
-        resp = self.session.post(
-            f"{API_BASE_URL}{API_MONTHLY_SUMMARY}"
+        data = self._post(
+            f"{API_MONTHLY_SUMMARY}"
             f"?stationId={station_id}&summaryCategoryKey=pvInverterElectricityQuantityClass",
-            json={"time": str(year)},
+            {"time": str(year)},
             timeout=30,
         )
-        resp.raise_for_status()
-        data = resp.json()
 
         if data.get("code") not in (0, None):
             raise RuntimeError(
@@ -1361,14 +1410,11 @@ class SolarOfThingsAPI:
 
     def _summary(self, path: str, station_id: str, body: dict[str, Any] | None) -> Any:
         """POST one station summary endpoint; raise on a portal error code."""
-        self._ensure_token_valid()
-        url = (
-            f"{API_BASE_URL}{path}?stationId={station_id}"
-            f"&summaryCategoryKey={SUMMARY_CATEGORY}"
+        data = self._post(
+            f"{path}?stationId={station_id}&summaryCategoryKey={SUMMARY_CATEGORY}",
+            body or {},
+            timeout=30,
         )
-        resp = self.session.post(url, json=body or {}, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
         if data.get("code") not in (0, None):
             raise RuntimeError(
                 f"Summary error code={data.get('code')} message={data.get('message')}"
@@ -1419,12 +1465,8 @@ class SolarOfThingsAPI:
 
     def _write_setting(self, device_id: str, key: str, value: Any) -> None:
         """Write a single device setting key=value via the remote config write API."""
-        self._ensure_token_valid()
-        url = f"{API_BASE_URL}{API_SETTINGS_SET}?deviceId={device_id}"
         payload = {"deviceId": device_id, "key": key, "value": value}
-        resp = self.session.post(url, json=payload, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
+        data = self._post(f"{API_SETTINGS_SET}?deviceId={device_id}", payload, timeout=30)
         if data.get("code") not in (0, None):
             raise RuntimeError(
                 f"Settings write error code={data.get('code')} "
@@ -1438,11 +1480,7 @@ class SolarOfThingsAPI:
         contains at least 'key', 'value', and 'valueDisplay' fields.
         The endpoint accepts a plain IOT-Token header (no IOT-Open-Sign).
         """
-        self._ensure_token_valid()
-        url = f"{API_BASE_URL}{API_SETTINGS_GET}?deviceId={device_id}"
-        resp = self.session.post(url, json={}, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
+        data = self._post(f"{API_SETTINGS_GET}?deviceId={device_id}", {}, timeout=30)
         if data.get("code") not in (0, None):
             raise RuntimeError(
                 f"Settings fetch error code={data.get('code')} "
