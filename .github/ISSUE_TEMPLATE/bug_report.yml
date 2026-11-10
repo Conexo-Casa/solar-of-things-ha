@@ -39,7 +39,8 @@ body:
     attributes:
       label: Installation method
       options:
-        - HACS
+        - Marketplace (HA 2026.11+)
+        - HACS (HA 2026.10 or older)
         - Manual
     validations:
       required: true

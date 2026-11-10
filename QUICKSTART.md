@@ -30,7 +30,11 @@ Get Solar of Things running in Home Assistant in under 5 minutes.
 
 ## Step 2 — Install (1 min)
 
-### Option A: HACS
+### Option A: Marketplace (Home Assistant 2026.11+)
+1. **Settings → Marketplace** → **Add from link** → `Conexo-Casa/solar-of-things-ha`
+2. Open **Solar of Things** → **Install** (no restart needed)
+
+### Option A2: HACS (Home Assistant 2026.10 and older)
 1. HACS → Integrations → **⋮** → Custom repositories
 2. Add `https://github.com/Conexo-Casa/solar-of-things-ha` → Integration
 3. Search **Solar of Things** → Download
