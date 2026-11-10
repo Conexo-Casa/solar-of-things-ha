@@ -434,6 +434,53 @@ def map_energy_flow_fields(fields: Any) -> dict[str, float]:
     return mapped
 
 
+def split_pv_strings(fields: Any) -> dict[str, float]:
+    """Per-string PV readings for dual-MPPT firmware that names MPPT1 ``pv*``.
+
+    Datouboss HPVINV04 (#22, #51) reports MPPT1 as ``pvVoltage`` / ``pvPower``
+    (no "1") and MPPT2 as ``pv2Voltage`` / ``pv2Power``.  Its time-series
+    ``pvPower`` therefore feeds PV Input Power with MPPT1 only (the HPVINV02
+    alias from #13, where ``pvPower`` is the device total).
+
+    Returns:
+      * ``pvInputVoltage`` / ``pv2InputVoltage`` when ``pv2Voltage`` is present
+        and both are tagged V.  Requiring pv2Voltage keeps single-string models
+        (Manyi #49, Gospower #41: ``pvVoltage`` only) unchanged.
+      * ``pv1InputPower`` / ``pv2InputPower`` / ``pvInputPower`` only when the
+        device's own aggregate confirms the split: tagged ``generationPower``
+        equals ``pvPower + pv2Power`` (within 2 % or 10 W).  That check is what
+        tells "pvPower = MPPT1" apart from "pvPower = total", so a device where
+        pvPower is already the total is never double-counted.
+
+    Pure function, no I/O.  Empty dict when nothing is confirmed.
+    """
+    if not isinstance(fields, dict):
+        return {}
+    out: dict[str, float] = {}
+
+    def _volts(key: str) -> float | None:
+        raw = fields.get(key)
+        tag = raw.get("unit") if isinstance(raw, dict) else None
+        if not (isinstance(tag, str) and tag.strip().lower() == "v"):
+            return None
+        return _coerce_number(raw)
+
+    v1, v2 = _volts("pvVoltage"), _volts("pv2Voltage")
+    if v1 is not None and v2 is not None:
+        out["pvInputVoltage"] = v1
+        out["pv2InputVoltage"] = v2
+
+    p1 = _scaled_number(fields.get("pvPower"), None)
+    p2 = _scaled_number(fields.get("pv2Power"), None)
+    total = _scaled_number(fields.get("generationPower"), None)
+    if p1 is not None and p2 is not None and total is not None:
+        if abs(total - (p1 + p2)) <= max(10.0, 0.02 * abs(total)):
+            out["pv1InputPower"] = p1
+            out["pv2InputPower"] = p2
+            out["pvInputPower"] = p1 + p2
+    return out
+
+
 def map_energy_flow_extras(fields: Any) -> dict[str, float]:
     """Return {field: value} for ENERGY_FLOW_EXTRA_SENSORS present in *fields*.
 
@@ -1021,8 +1068,27 @@ class SolarOfThingsAPI:
                         sorted(fields),
                     )
 
+        # Extras first: they fetch (or reuse) this poll's energy-flow payload,
+        # which the per-string split below needs.
+        extras = self._fetch_extras(device_id, flow_fields)
+
+        # Dual-MPPT strings named pv*/pv2* (HPVINV04, #51).  Uses this poll's
+        # energy-flow payload (fallback above, AC-output unit lookup or the
+        # extras fetch); costs no extra call.  Voltages only fill
+        # gaps.  Powers replace the time-series values because the device's
+        # own generationPower has confirmed pvPower is MPPT1, not the total.
+        strings = split_pv_strings(
+            flow_fields if flow_fields is not None else self._flow_cache.get(device_id)
+        )
+        for key in ("pvInputVoltage", "pv2InputVoltage"):
+            if key in strings and _coerce_number(latest_values.get(key)) is None:
+                latest_values[key] = strings[key]
+        for key in ("pvInputPower", "pv1InputPower", "pv2InputPower"):
+            if key in strings:
+                latest_values[key] = strings[key]
+
         self._apply_derived_values(latest_values)
-        latest_values["extras"] = self._fetch_extras(device_id, flow_fields)
+        latest_values["extras"] = extras
         return latest_values
 
     def _fetch_extras(
