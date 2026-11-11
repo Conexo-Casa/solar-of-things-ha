@@ -440,6 +440,8 @@ See **[CHANGELOG.md](CHANGELOG.md)** for full history.
 
 | Version | Highlights |
 |---|---|
+| **v2.9.3** | Dual-MPPT HPVINV04: PV1/PV2 Input Voltage and per-string power, PV Input = PV1 + PV2 |
+| **v2.9.2** | Install from the HA 2026.11 Marketplace; hassfest/HACS validation |
 | **v2.9.1** | Manyi extra sensors: solar charging current, input/output voltage and frequency, temperatures |
 | **v2.9.0** | Station Daily / Yearly / Lifetime PV, extra energy-flow sensors (generation power, load %, PV voltage) |
 | **v2.8.5** | Monthly sensors read the real station summary (no false 0) |

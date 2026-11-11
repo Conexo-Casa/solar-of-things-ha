@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.9.3] - 2026-11-11
+
+### Fixed
+- **PV1 / PV2 Input Voltage and per-string power on dual-MPPT inverters that name MPPT1 `pv*` and MPPT2 `pv2*`** (Datouboss HPVINV04, #51). PV1/PV2 Input Voltage now read `pvVoltage` / `pv2Voltage` instead of staying unknown, PV1 Input Power gets a value, and PV Input Power becomes PV1 + PV2 instead of MPPT1 only. The split is applied only when the inverter's own `generationPower` equals `pvPower + pv2Power`, so models where `pvPower` is already the device total (HPVINV02, #13) and single-string models are unchanged. Thanks to @montemarzano75 for the capture and for verifying the fix against the portal.
+
 ## [2.9.2] - 2026-11-11
 
 ### Changed
