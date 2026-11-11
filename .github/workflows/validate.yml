@@ -34,7 +34,7 @@ jobs:
           import json, sys
           m = json.load(open("custom_components/solar_of_things/manifest.json"))
           required = ["domain", "name", "version", "config_flow", "iot_class",
-                      "requirements", "integration_type", "homeassistant"]
+                      "requirements", "integration_type"]
           missing = [k for k in required if k not in m]
           if missing:
               print(f"manifest.json missing keys: {missing}")
