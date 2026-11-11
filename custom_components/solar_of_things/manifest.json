@@ -1,10 +1,11 @@
 {
   "domain": "solar_of_things",
   "name": "Solar of Things",
-  "codeowners": ["@Conexo-Casa"],
+  "codeowners": [
+    "@Conexo-Casa"
+  ],
   "config_flow": true,
   "documentation": "https://github.com/Conexo-Casa/solar-of-things-ha",
-  "homeassistant": "2023.6.0",
   "integration_type": "hub",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/Conexo-Casa/solar-of-things-ha/issues",

@@ -8,25 +8,34 @@
 
 ---
 
-## Method 1: HACS (Recommended)
+## Method 1: Marketplace or HACS (Recommended)
 
-1. **Install HACS** if not already installed → [hacs.xyz](https://hacs.xyz)
+### Marketplace (Home Assistant 2026.11 and newer)
 
-2. Open **HACS → Integrations** in the HA sidebar.
+[![Open your Home Assistant instance and show this repository in the Marketplace.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Conexo-Casa&repository=solar-of-things-ha&category=integration)
 
-3. Click **⋮** (top-right) → **Custom repositories**.
+Or by hand:
 
-4. Add:
-   ```
-   https://github.com/Conexo-Casa/solar-of-things-ha
-   ```
-   Category: **Integration** → **Add**.
+1. Go to **Settings → Marketplace**.
+2. Select **Add from link** (top right) and enter `Conexo-Casa/solar-of-things-ha`.
+   The first time, Home Assistant asks you to connect GitHub. That is a one-time,
+   read-only sign-in on github.com.
+3. Open **Solar of Things** and select **Install**. The setup screen opens right away; a first
+   install doesn't need a restart.
 
-5. Search **Solar of Things** → **Download**.
+Updates show up under **Settings → Updates**. After an update, Home Assistant shows a
+repair that offers to restart.
 
-6. **Restart Home Assistant.**
+### HACS (Home Assistant 2026.10 and older)
 
-7. Go to **Settings → Devices & Services → + Add Integration** → search **Solar of Things**.
+1. HACS → **Integrations** → **⋮** → **Custom repositories**.
+2. Add `https://github.com/Conexo-Casa/solar-of-things-ha`, category **Integration**.
+3. Download **Solar of Things**, then restart Home Assistant.
+
+An existing HACS install moves to the Marketplace by itself when you upgrade to 2026.11.
+
+Then go to **Settings → Devices & Services → + Add Integration** → search
+**Solar of Things** if the setup screen didn't open by itself.
 
 ---
 
@@ -77,7 +86,11 @@ with no errors, the component loaded correctly.
 
 ## Upgrading
 
-### Via HACS
+### Via the Marketplace (2026.11+)
+1. **Settings → Updates** → **Solar of Things** → **Install**.
+2. Restart when the repair asks you to.
+
+### Via HACS (2026.10 and older)
 1. HACS → Integrations → find Solar of Things → **Update**.
 2. Restart Home Assistant.
 

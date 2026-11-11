@@ -10,7 +10,7 @@
       },
       "password": {
         "title": "Solar of Things — User ID + Password",
-        "description": "Enter your Siseli portal login credentials.\n\n- **User ID**: your account/login name on https://solar.siseli.com (a name, not a number)\n- **Station ID**: optional — leave blank and your stations are listed for you after login. If you type one, it is the numeric `stationId` from the portal, **not** the serial number or DTU-ID printed on your inverter or WiFi dongle.\n- **Device ID**: optional — leave blank to auto-discover all devices under the station\n- **Time zone**: must match your inverter's configured time zone\n\nMore info: {docs_url}",
+        "description": "Enter your Siseli portal login credentials.\n\n- **User ID**: your account/login name on {portal_url} (a name, not a number)\n- **Station ID**: optional — leave blank and your stations are listed for you after login. If you type one, it is the numeric `stationId` from the portal, **not** the serial number or DTU-ID printed on your inverter or WiFi dongle.\n- **Device ID**: optional — leave blank to auto-discover all devices under the station\n- **Time zone**: must match your inverter's configured time zone\n\nMore info: {docs_url}",
         "data": {
           "user_id": "User ID / Account",
           "password": "Password",
@@ -21,7 +21,7 @@
       },
       "token": {
         "title": "Solar of Things — IOT Token",
-        "description": "Enter an IOT-Token from https://solar.siseli.com (DevTools → Network → request headers).\n\nNote: tokens expire. When expired you will be prompted to enter a new one.\n\nMore info: {docs_url}",
+        "description": "Enter an IOT-Token from {portal_url} (DevTools → Network → request headers).\n\nNote: tokens expire. When expired you will be prompted to enter a new one.\n\nMore info: {docs_url}",
         "data": {
           "iot_token": "IOT Token",
           "station_id": "Station ID (required)",

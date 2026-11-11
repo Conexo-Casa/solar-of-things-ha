@@ -4,8 +4,8 @@
   <a href="https://github.com/Conexo-Casa/solar-of-things-ha/releases/latest">
     <img src="https://img.shields.io/github/v/release/Conexo-Casa/solar-of-things-ha?style=for-the-badge&label=Latest%20Release&color=orange" alt="Latest Release">
   </a>
-  <a href="https://github.com/custom-components/hacs">
-    <img src="https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge" alt="HACS Custom">
+  <a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=Conexo-Casa&repository=solar-of-things-ha&category=integration">
+    <img src="https://img.shields.io/badge/HA%20Marketplace-custom%20repository-41BDF5.svg?style=for-the-badge" alt="Home Assistant Marketplace">
   </a>
   <a href="https://www.home-assistant.io/">
     <img src="https://img.shields.io/badge/Home%20Assistant-2023.6%2B-41BDF5?style=for-the-badge&logo=home-assistant" alt="Home Assistant">
@@ -202,17 +202,29 @@ this project, not a fallback.
 
 ## Installation
 
-### HACS (Recommended)
+### Marketplace (Home Assistant 2026.11 and newer)
 
-1. Open **HACS** in the HA sidebar → **Integrations**.
-2. Click **⋮** (top-right) → **Custom repositories**.
-3. Enter:
-   ```
-   https://github.com/Conexo-Casa/solar-of-things-ha
-   ```
-   Category: **Integration** → **Add**.
-4. Search **Solar of Things** → **Download**.
-5. **Restart Home Assistant.**
+[![Open your Home Assistant instance and show this repository in the Marketplace.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Conexo-Casa&repository=solar-of-things-ha&category=integration)
+
+Or by hand:
+
+1. Go to **Settings → Marketplace**.
+2. Select **Add from link** (top right) and enter `Conexo-Casa/solar-of-things-ha`.
+   The first time, Home Assistant asks you to connect GitHub. That is a one-time,
+   read-only sign-in on github.com.
+3. Open **Solar of Things** and select **Install**. The setup screen opens right away; a first
+   install doesn't need a restart.
+
+Updates show up under **Settings → Updates**. After an update, Home Assistant shows a
+repair that offers to restart.
+
+### HACS (Home Assistant 2026.10 and older)
+
+1. HACS → **Integrations** → **⋮** → **Custom repositories**.
+2. Add `https://github.com/Conexo-Casa/solar-of-things-ha`, category **Integration**.
+3. Download **Solar of Things**, then restart Home Assistant.
+
+An existing HACS install moves to the Marketplace by itself when you upgrade to 2026.11.
 
 ### Manual
 

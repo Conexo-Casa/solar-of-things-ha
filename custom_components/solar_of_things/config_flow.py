@@ -175,7 +175,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 }
             ),
             description_placeholders={
-                "docs_url": "https://github.com/Conexo-Casa/solar-of-things-ha"
+                "docs_url": "https://github.com/Conexo-Casa/solar-of-things-ha",
+                "portal_url": "https://solar.siseli.com",
             },
         )
 
@@ -245,7 +246,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             ),
             errors=errors,
             description_placeholders={
-                "docs_url": "https://github.com/Conexo-Casa/solar-of-things-ha"
+                "docs_url": "https://github.com/Conexo-Casa/solar-of-things-ha",
+                "portal_url": "https://solar.siseli.com",
             },
         )
 
@@ -325,7 +327,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             ),
             errors=errors,
             description_placeholders={
-                "docs_url": "https://github.com/Conexo-Casa/solar-of-things-ha"
+                "docs_url": "https://github.com/Conexo-Casa/solar-of-things-ha",
+                "portal_url": "https://solar.siseli.com",
             },
         )
 
