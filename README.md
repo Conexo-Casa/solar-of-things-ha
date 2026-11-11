@@ -127,6 +127,9 @@ this project, not a fallback.
 | `{device} Grid Feed-in Power` | W | `power` | Power exported to the utility grid |
 | `{device} Grid Import Power` | W | `power` | Power imported from the utility grid |
 | `{device} Load Power` | W | `power` | Total household / load consumption |
+| `{device} PV1 Input Power` / `PV2 Input Power` | W | `power` | Per-string PV power (dual-MPPT inverters) |
+| `{device} PV1 Input Voltage` / `PV2 Input Voltage` | V | `voltage` | Per-string PV voltage (dual-MPPT inverters) |
+| `{device} Grid Voltage` | V | `voltage` | Grid input voltage (0 V when the grid is down) |
 
 ### Monthly Station Sensors
 > Updated every **30 minutes** · Requires Station ID
@@ -437,6 +440,15 @@ See **[CHANGELOG.md](CHANGELOG.md)** for full history.
 
 | Version | Highlights |
 |---|---|
+| **v2.9.1** | Manyi extra sensors: solar charging current, input/output voltage and frequency, temperatures |
+| **v2.9.0** | Station Daily / Yearly / Lifetime PV, extra energy-flow sensors (generation power, load %, PV voltage) |
+| **v2.8.5** | Monthly sensors read the real station summary (no false 0) |
+| **v2.8.3–2.8.4** | Honest battery/grid estimates, measured grid import, station picker, JC-5052 1000× fix |
+| **v2.8.1** | PV Input = PV1 + PV2 on dual-MPPT; PV1/PV2 power and voltage, Grid Voltage sensors |
+| **v2.8.0** | SRNE-family mappings, unit-tag-aware power, HA 2026.10 device-registry fix |
+| **v2.7.0** | Control writes fixed on models with different setting keys |
+| **v2.6.0** | AC output, grid import/feed-in, battery current from energy-flow |
+| **v2.5.0–2.5.1** | Energy-flow fallback for inverters without time-series data; HPVINV02 key aliases |
 | **v2.4.0** | HACS structure, brand icon, missing API methods fixed, translation keys, device registry fix |
 | **v2.3.3** | Correct settings API endpoints from live portal |
 | **v2.3.0** | User ID auth, working IOT-Open signing |
