@@ -39,7 +39,7 @@ jobs:
           if missing:
               print(f"manifest.json missing keys: {missing}")
               sys.exit(1)
-          print(f"manifest.json OK — version={m['version']}, type={m['integration_type']}, ha>={m['homeassistant']}")
+          print(f"manifest.json OK — version={m['version']}, type={m['integration_type']}")
           PY
 
       - name: Validate hacs.json
