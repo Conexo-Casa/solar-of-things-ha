@@ -62,6 +62,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac as _hmac
+import json
 import logging
 import os
 import threading
@@ -635,7 +636,6 @@ class SolarOfThingsAPI:
 
         _LOGGER.debug("SolarOfThings: logging in as %s", self._user_id)
 
-        import json as _json
         # The Siseli portal transmits the password as MD5(plaintext) lowercase hex —
         # the server rejects plaintext with error code 7.  This is a protocol
         # requirement of the upstream API, not a choice we can change.  The hash
@@ -647,7 +647,7 @@ class SolarOfThingsAPI:
             "account": self._user_id,
             "password": password_md5,
         }
-        body_bytes = _json.dumps(payload, separators=(",", ":")).encode("utf-8")
+        body_bytes = json.dumps(payload, separators=(",", ":")).encode("utf-8")
 
         headers = _make_signed_headers(body_bytes)
 
@@ -680,12 +680,11 @@ class SolarOfThingsAPI:
 
         _LOGGER.debug("SolarOfThings: refreshing access token")
 
-        import json as _json
         payload = {
             "accessToken": self._access_token,
             "refreshToken": self._refresh_token,
         }
-        body_bytes = _json.dumps(payload, separators=(",", ":")).encode("utf-8")
+        body_bytes = json.dumps(payload, separators=(",", ":")).encode("utf-8")
         headers = _make_signed_headers(body_bytes)
 
         resp = requests.post(

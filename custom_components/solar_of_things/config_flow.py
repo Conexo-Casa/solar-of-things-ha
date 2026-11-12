@@ -332,36 +332,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     # ── Re-auth flow ───────────────────────────────────────────────────────────
 
     async def async_step_reauth(self, entry_data: dict[str, Any] | None = None) -> FlowResult:
-        """Triggered by the coordinator when TokenExpiredError is raised.
-
-        If stored user_id + password credentials exist, try automatic re-auth
-        first before prompting the user.
-        """
-        existing_entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
-        if existing_entry and existing_entry.data.get(CONF_USER_ID) and existing_entry.data.get(CONF_PASSWORD):
-            merged = normalise_config_fields(dict(existing_entry.data))
-            try:
-                info = await _validate_password_auth(self.hass, merged)
-            except Exception as err:
-                _LOGGER.warning(
-                    "SolarOfThings: automatic re-auth in async_step_reauth failed (%s); "
-                    "falling back to confirmation form",
-                    err,
-                )
-            else:
-                self.hass.config_entries.async_update_entry(
-                    existing_entry,
-                    data={
-                        **merged,
-                        CONF_IOT_TOKEN: info[CONF_IOT_TOKEN],
-                        CONF_REFRESH_TOKEN: info[CONF_REFRESH_TOKEN],
-                        CONF_ACCESS_TOKEN_EXPIRES: info[CONF_ACCESS_TOKEN_EXPIRES],
-                        CONF_REFRESH_TOKEN_EXPIRES: info[CONF_REFRESH_TOKEN_EXPIRES],
-                    },
-                )
-                await self.hass.config_entries.async_reload(existing_entry.entry_id)
-                return self.async_abort(reason="reauth_successful")
-
+        """Triggered by the coordinator when TokenExpiredError is raised."""
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(
@@ -444,13 +415,11 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         # Build schema based on whether the entry has stored credentials
         if has_password:
-            stored_pw = existing_entry.data.get(CONF_PASSWORD, "") if existing_entry else ""
             schema = vol.Schema(
                 {
                     vol.Optional(
                         CONF_PASSWORD,
-                        default=stored_pw,
-                        description={"suggested_value": stored_pw},
+                        description={"suggested_value": ""},
                     ): cv.string,
                 }
             )
