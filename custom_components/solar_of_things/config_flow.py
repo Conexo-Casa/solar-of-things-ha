@@ -360,8 +360,16 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 # Re-authenticate with potentially updated email/password
                 # Normalise the merge, not just user_input: the station/device
                 # IDs come from the stored entry, which may pre-date trimming.
+                effective_password = (
+                    user_input.get(CONF_PASSWORD)
+                    or (existing_entry.data.get(CONF_PASSWORD) if existing_entry else "")
+                )
                 merged = normalise_config_fields(
-                    {**(existing_entry.data if existing_entry else {}), **user_input}
+                    {
+                        **(existing_entry.data if existing_entry else {}),
+                        **user_input,
+                        CONF_PASSWORD: effective_password,
+                    }
                 )
                 try:
                     info = await _validate_password_auth(self.hass, merged)
@@ -376,8 +384,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     self.hass.config_entries.async_update_entry(
                         existing_entry,
                         data={
-                            **existing_entry.data,
-                            CONF_PASSWORD: user_input.get(CONF_PASSWORD, existing_entry.data.get(CONF_PASSWORD)),
+                            **merged,
+                            CONF_PASSWORD: effective_password,
                             CONF_IOT_TOKEN: info[CONF_IOT_TOKEN],
                             CONF_REFRESH_TOKEN: info[CONF_REFRESH_TOKEN],
                             CONF_ACCESS_TOKEN_EXPIRES: info[CONF_ACCESS_TOKEN_EXPIRES],
