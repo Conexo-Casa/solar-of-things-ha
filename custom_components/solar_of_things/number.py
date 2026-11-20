@@ -38,6 +38,7 @@ async def async_setup_entry(
                 SolarOfThingsBatteryChargeLimitNumber(api, coordinator, station_id, device_id, device_name),
                 SolarOfThingsBatteryDischargeLimitNumber(api, coordinator, station_id, device_id, device_name),
                 SolarOfThingsGridChargeLimitNumber(api, coordinator, station_id, device_id, device_name),
+                SolarOfThingsMaxTotalChargeCurrentNumber(api, coordinator, station_id, device_id, device_name),
             ]
         )
 
@@ -160,5 +161,28 @@ class SolarOfThingsGridChargeLimitNumber(_BaseNumber):
         settings = (self.coordinator.data or {}).get("settings")
         await self.hass.async_add_executor_job(
             self._api.set_grid_charge_limit, self._device_id, int(value), settings
+        )
+        await self.coordinator.async_request_refresh()
+
+
+class SolarOfThingsMaxTotalChargeCurrentNumber(_BaseNumber):
+    _setting_key = "maxTotalChargeCurrentSetting"
+
+    def __init__(self, api, coordinator, station_id: str, device_id: str, device_name: str) -> None:
+        super().__init__(api, coordinator, station_id, device_id, device_name)
+        self._attr_name = f"{device_name} Max Total Charge Current"
+        self._attr_unique_id = f"{DOMAIN}_{station_id}_{device_id}_max_total_charge_current"
+        self._attr_native_min_value = 10
+        self._attr_native_max_value = 110
+        self._attr_native_step = 10
+        self._attr_native_unit_of_measurement = "A"
+        self._attr_mode = NumberMode.SLIDER
+        self._attr_device_class = NumberDeviceClass.CURRENT
+        self._attr_icon = "mdi:battery-charging-high"
+
+    async def async_set_native_value(self, value: float) -> None:
+        settings = (self.coordinator.data or {}).get("settings")
+        await self.hass.async_add_executor_job(
+            self._api.set_max_total_charge_current, self._device_id, int(value), settings
         )
         await self.coordinator.async_request_refresh()
