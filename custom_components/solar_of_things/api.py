@@ -1630,6 +1630,13 @@ class SolarOfThingsAPI:
         key = self._resolve_write_key("gridChargeLimit", settings)
         self._write_setting(device_id, key, watts)
 
+    def set_max_total_charge_current(
+        self, device_id: str, amps: int, settings: dict[str, Any] | None = None
+    ) -> None:
+        """Set the maximum total battery charge current (A)."""
+        key = self._resolve_write_key("maxTotalChargeCurrentSetting", settings)
+        self._write_setting(device_id, key, amps)
+
     def list_stations(self) -> list[dict[str, str]]:
         """Return the account's stations as [{"id": ..., "name": ...}].
 
